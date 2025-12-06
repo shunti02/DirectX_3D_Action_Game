@@ -1,0 +1,208 @@
+/*===================================================================
+//ファイル:Main.cpp
+//制作日:2025/12/05
+//概要:アプリケーションのエントリーポイント、ウィンドウ生成とメインループを管理する
+//制作者:伊藤駿汰
+//-------------------------------------------------------------------
+//更新履歴:
+//2025/12/05:新規作成、ウィンドウ表示機能の実装
+//2025/12/05:デバッグコンソールの実装
+//2025/12/05:FPS管理実装
+=====================================================================*/
+#include "App/Main.h"
+#include "Engine/Graphics.h"
+#include "ECS/World.h"
+#include "ECS/Components/TransformComponent.h"
+#include <iostream>
+#include <cstdio>
+#include <crtdbg.h>
+#pragma comment(lib, "winmm.lib")
+/*----------------------------------------------------------
+//内部変数・定数
+------------------------------------------------------------*/
+namespace {
+    Graphics* g_pGraphics = nullptr;
+    World* g_World = nullptr;
+
+    LARGE_INTEGER g_TimeFreq;//時間計測の周波数
+    LARGE_INTEGER g_TimeStart;//計測開始時間
+    LARGE_INTEGER g_TimeEnd;//計測終了時間
+    float g_FrameTime = 0.0f;//1フレームにかかった時間（秒）
+}
+
+//内部関数プロトタイプ
+void InitFPS();
+bool IsFrameReady();
+/*-----------------------------------------------------------------------------
+//WinMain
+--------------------------------------------------------------------------------*/
+
+
+//エントリーポイント
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	//メモリーリークチェックを有効化
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+
+    //デバッグコンソールの割り当て
+#ifdef _DEBUG
+    if (AllocConsole()) {
+        FILE* fp = nullptr;
+        freopen_s(&fp, "CONOUT$", "w", stdout);
+        freopen_s(&fp, "CONOUT$", "w", stderr);
+        freopen_s(&fp, "CONIN$", "r", stdin);
+        std::cout.sync_with_stdio();
+
+        //コンソール出力テスト
+        std::cout << "Debug Console Attached." << std::endl;
+        std::cout << "Target FPS." << Config::TARGET_FPS << std::endl;
+    }
+#endif
+    //タイマー精度向上
+    timeBeginPeriod(1);
+
+    //ウィンドウクラスの登録
+    WNDCLASSEX wc = { 0 };
+    wc.cbSize = sizeof(WNDCLASSEX);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = hInstance;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.lpszClassName = "DX11GameClass";
+    if (!RegisterClassEx(&wc)) return -1;
+
+    //ウィンドウ生成
+    //ウィンドウサイズの調整
+    RECT rc = { 0, 0, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT };
+    AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+
+    HWND hWnd = CreateWindow(
+        "DX11GameClass",
+        Config::WINDOW_TITLE,
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        rc.right - rc.left, rc.bottom - rc.top,
+        NULL, NULL, hInstance, NULL
+    );
+
+    if (!hWnd) return -1;
+
+    // 4. ウィンドウ表示
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
+
+    //メインループ
+    //初期化
+    Init(hWnd);
+
+    InitFPS();
+    
+    MSG msg = { 0 };
+    while (msg.message != WM_QUIT) {
+        if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        else {
+           
+            //フレーム更新タイミング待ち
+            if (!IsFrameReady())continue;
+            // ここにゲームの更新・描画処理が入ります
+            //経過時間を渡して更新
+            Update(g_FrameTime);
+            //描画処理
+            Draw();
+            // (ここで将来ECSのUpdate/Drawが入ります)
+        }
+    }
+    //終了処理
+    UnInit();
+    //タイマー設定を戻す
+    timeEndPeriod(1);
+
+#ifdef _DEBUG
+    FreeConsole();
+#endif
+
+    return (int)msg.wParam;
+}
+
+//ウィンドウプロシージャ
+LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+   if(msg == WM_DESTROY)PostQuitMessage(0);
+   if(msg == WM_KEYDOWN && wParam == VK_ESCAPE)PostQuitMessage(0);
+   return DefWindowProc(hWnd, msg, wParam, lParam);
+}
+
+/*----------------------------------------------------------
+//ゲーム制御実装
+-------------------------------------------------------------*/
+
+void Init(HWND hWnd)
+{
+    //Graphicsクラスの生成
+    g_pGraphics = new Graphics();
+
+    if (!g_pGraphics->Initialize(hWnd, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT)) {
+        MessageBox(NULL, "DirectX Initialization Failed", "Error", MB_OK);
+        return;
+    }
+    //World生成
+    g_World = new World();
+    //一括作成
+    g_World->CreateEntity()
+        .AddComponent<TransformComponent>(0.0f, 0.0f, 0.0f)
+        .Build();//最後にIDを返す
+}
+
+void UnInit()
+{
+    //メモリ開放
+    if (g_World) { delete g_World; g_World = nullptr; }
+    if (g_pGraphics) { delete g_pGraphics; g_pGraphics = nullptr; }
+}
+
+void Update(float deltaTime)
+{
+    //std::cout << "dt:" << deltaTime * 1000.0f << "ms" << std::endl;
+    if (g_World) { g_World->Update(deltaTime);}
+}
+
+void Draw()
+{
+    if (!g_pGraphics)return;
+
+    //描画開始
+    g_pGraphics->BeginFrame(0.0f, 0.0f, 1.0f, 1.0f);
+
+    //World一括描画
+    if (g_World) { g_World->Draw(); }
+
+    //描画終了
+    g_pGraphics->EndFrame();
+}
+
+//FPS制御関数の定義
+void InitFPS()
+{
+    //パフォーマンスカウンタの周波数を取得
+    QueryPerformanceFrequency(&g_TimeFreq);
+    //現在のカウントを取得
+    QueryPerformanceCounter(&g_TimeStart);
+}
+
+bool IsFrameReady()
+{
+    
+    //今の時間を取得
+    QueryPerformanceCounter(&g_TimeEnd);
+    //経過時間を計算
+    double elapsed = static_cast<double>(g_TimeEnd.QuadPart - g_TimeStart.QuadPart) / static_cast<double>(g_TimeFreq.QuadPart);
+    //時間1/60
+    double targetTime = 1.0 / Config::TARGET_FPS;
+    //まだ時間が余っているなら待機
+    if (elapsed < targetTime)return false;
+    g_FrameTime = static_cast<float>(elapsed);
+    //時間が経過したら計測開始時間を更新してtrueを返す
+    g_TimeStart = g_TimeEnd;
+    return true;
+}

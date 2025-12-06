@@ -1,17 +1,81 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="ソース ファイル">
+    <Filter Include="SourceFiles">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="ヘッダー ファイル">
+    <Filter Include="HeaderFiles">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="リソース ファイル">
+    <Filter Include="ResourceFiles">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="SourceFiles\App">
+      <UniqueIdentifier>{b4a0a53e-b737-42f2-af49-4274f7bc944d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\App">
+      <UniqueIdentifier>{1baba6bb-78dd-45bf-b8d0-e069a77f8c52}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SourceFiles\Engine">
+      <UniqueIdentifier>{93dbdfb9-02bd-4286-9eac-08387761b324}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\Engine">
+      <UniqueIdentifier>{4f6b4f8e-061a-4e46-b39d-ab1a08a0b269}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SourceFiles\ECS">
+      <UniqueIdentifier>{3c6c0f9c-be0b-40c5-addc-a70475ad55e8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\ECS">
+      <UniqueIdentifier>{70795fb2-8b39-4b50-b201-cabfc1115ced}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\ECS\Components">
+      <UniqueIdentifier>{67cd90bc-37dc-4cda-b5a6-5fc9d1c3cd19}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="SourceFiles\App\Main.cpp">
+      <Filter>SourceFiles\App</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\Graphics.cpp">
+      <Filter>SourceFiles\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\ECS.cpp">
+      <Filter>SourceFiles\ECS</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\World.cpp">
+      <Filter>SourceFiles\ECS</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="HeaderFiles\Engine\Graphics.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\App\Main.h">
+      <Filter>HeaderFiles\App</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Component.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\System.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\AllComponent.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\AllSystem.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\ECS.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\World.h">
+      <Filter>HeaderFiles\ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\TransformComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
