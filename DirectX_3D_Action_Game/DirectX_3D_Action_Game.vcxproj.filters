@@ -34,6 +34,21 @@
     <Filter Include="HeaderFiles\ECS\Components">
       <UniqueIdentifier>{67cd90bc-37dc-4cda-b5a6-5fc9d1c3cd19}</UniqueIdentifier>
     </Filter>
+    <Filter Include="HeaderFiles\Game">
+      <UniqueIdentifier>{5055953c-a2eb-4014-8325-b339b04848d8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\Scene">
+      <UniqueIdentifier>{c34386e7-eab7-4574-b05b-1db5d3adff48}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{8e297ec9-38a2-4c3c-9081-554371bebaaa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="HeaderFiles\ECS\Systems">
+      <UniqueIdentifier>{45d26571-f2ca-48c3-990b-063492b6939a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SourceFiles\ECS\Systems">
+      <UniqueIdentifier>{bc04eb17-836f-4a13-8b90-b2487637747b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SourceFiles\App\Main.cpp">
@@ -47,6 +62,15 @@
     </ClCompile>
     <ClCompile Include="SourceFiles\ECS\World.cpp">
       <Filter>SourceFiles\ECS</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\App\Game.cpp">
+      <Filter>SourceFiles\App</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\Input.cpp">
+      <Filter>SourceFiles\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\PhysicsSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -77,5 +101,61 @@
     <ClInclude Include="HeaderFiles\ECS\Components\TransformComponent.h">
       <Filter>HeaderFiles\ECS\Components</Filter>
     </ClInclude>
+    <ClInclude Include="HeaderFiles\Game\EntityFactory.h">
+      <Filter>HeaderFiles\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\BaseScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\SceneManager.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\GameScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\App\Game.h">
+      <Filter>HeaderFiles\App</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\Vertex.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\RenderSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\GeometryGenerator.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\CameraComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\CameraSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\Input.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\PlayerSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\ColliderComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="Shaders\SimplePS.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\SimpleVS.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>
