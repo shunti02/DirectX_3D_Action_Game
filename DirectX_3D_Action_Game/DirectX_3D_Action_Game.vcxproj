@@ -131,21 +131,56 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="SourceFiles\App\Game.cpp" />
     <ClCompile Include="SourceFiles\App\Main.cpp" />
     <ClCompile Include="SourceFiles\ECS\ECS.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\PhysicsSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\World.cpp" />
     <ClCompile Include="SourceFiles\Engine\Graphics.cpp" />
+    <ClCompile Include="SourceFiles\Engine\Input.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="HeaderFiles\App\Game.h" />
     <ClInclude Include="HeaderFiles\App\Main.h" />
     <ClInclude Include="HeaderFiles\ECS\AllComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\AllSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Component.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\CameraComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\ColliderComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\TransformComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\ECS.h" />
     <ClInclude Include="HeaderFiles\ECS\System.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\CameraSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\PlayerSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\RenderSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\World.h" />
+    <ClInclude Include="HeaderFiles\Engine\GeometryGenerator.h" />
     <ClInclude Include="HeaderFiles\Engine\Graphics.h" />
+    <ClInclude Include="HeaderFiles\Engine\Input.h" />
+    <ClInclude Include="HeaderFiles\Engine\Vertex.h" />
+    <ClInclude Include="HeaderFiles\Game\EntityFactory.h" />
+    <ClInclude Include="HeaderFiles\Scene\BaseScene.h" />
+    <ClInclude Include="HeaderFiles\Scene\GameScene.h" />
+    <ClInclude Include="HeaderFiles\Scene\SceneManager.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="Shaders\SimplePS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <FileType>Document</FileType>
+    </CustomBuild>
+    <CustomBuild Include="Shaders\SimpleVS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
+      <FileType>Document</FileType>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

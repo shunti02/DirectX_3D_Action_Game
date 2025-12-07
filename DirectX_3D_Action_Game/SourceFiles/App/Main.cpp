@@ -8,11 +8,10 @@
 //2025/12/05:新規作成、ウィンドウ表示機能の実装
 //2025/12/05:デバッグコンソールの実装
 //2025/12/05:FPS管理実装
+//2025/12/07:Mainの機能を移行Gameクラスを起動するのみに変更
 =====================================================================*/
 #include "App/Main.h"
-#include "Engine/Graphics.h"
-#include "ECS/World.h"
-#include "ECS/Components/TransformComponent.h"
+#include "App/Game.h"
 #include <iostream>
 #include <cstdio>
 #include <crtdbg.h>
@@ -21,16 +20,15 @@
 //内部変数・定数
 ------------------------------------------------------------*/
 namespace {
-    Graphics* g_pGraphics = nullptr;
-    World* g_World = nullptr;
-
+    std::unique_ptr<Game> g_Game;//ゲーム管理クラス
+    //FPS管理用
     LARGE_INTEGER g_TimeFreq;//時間計測の周波数
     LARGE_INTEGER g_TimeStart;//計測開始時間
     LARGE_INTEGER g_TimeEnd;//計測終了時間
     float g_FrameTime = 0.0f;//1フレームにかかった時間（秒）
 }
 
-//内部関数プロトタイプ
+//プロトタイプ宣言
 void InitFPS();
 bool IsFrameReady();
 /*-----------------------------------------------------------------------------
@@ -51,16 +49,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         freopen_s(&fp, "CONOUT$", "w", stderr);
         freopen_s(&fp, "CONIN$", "r", stdin);
         std::cout.sync_with_stdio();
-
-        //コンソール出力テスト
-        std::cout << "Debug Console Attached." << std::endl;
-        std::cout << "Target FPS." << Config::TARGET_FPS << std::endl;
     }
 #endif
     //タイマー精度向上
     timeBeginPeriod(1);
 
-    //ウィンドウクラスの登録
+    //ウィンドウクラス登録
     WNDCLASSEX wc = { 0 };
     wc.cbSize = sizeof(WNDCLASSEX);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -76,11 +70,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
 
     HWND hWnd = CreateWindow(
-        "DX11GameClass",
-        Config::WINDOW_TITLE,
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        rc.right - rc.left, rc.bottom - rc.top,
+        "DX11GameClass",Config::WINDOW_TITLE,WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT,rc.right - rc.left, rc.bottom - rc.top,
         NULL, NULL, hInstance, NULL
     );
 
@@ -90,8 +81,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
-    //メインループ
-    //初期化
+    //Gameクラスの生成と初期化
     Init(hWnd);
 
     InitFPS();
@@ -103,15 +93,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             DispatchMessage(&msg);
         }
         else {
-           
             //フレーム更新タイミング待ち
             if (!IsFrameReady())continue;
-            // ここにゲームの更新・描画処理が入ります
-            //経過時間を渡して更新
+            //Gameクラスの更新・描画
             Update(g_FrameTime);
-            //描画処理
             Draw();
-            // (ここで将来ECSのUpdate/Drawが入ります)
         }
     }
     //終了処理
@@ -134,51 +120,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 /*----------------------------------------------------------
-//ゲーム制御実装
+//ラッパー関数群
 -------------------------------------------------------------*/
 
 void Init(HWND hWnd)
 {
-    //Graphicsクラスの生成
-    g_pGraphics = new Graphics();
-
-    if (!g_pGraphics->Initialize(hWnd, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT)) {
-        MessageBox(NULL, "DirectX Initialization Failed", "Error", MB_OK);
-        return;
+    g_Game = std::make_unique<Game>();
+    if (!g_Game->Initialize(hWnd)) {
+        MessageBox(NULL, "Initialization Failed", "Error", MB_OK);
+        exit(-1);
     }
-    //World生成
-    g_World = new World();
-    //一括作成
-    g_World->CreateEntity()
-        .AddComponent<TransformComponent>(0.0f, 0.0f, 0.0f)
-        .Build();//最後にIDを返す
 }
 
 void UnInit()
 {
-    //メモリ開放
-    if (g_World) { delete g_World; g_World = nullptr; }
-    if (g_pGraphics) { delete g_pGraphics; g_pGraphics = nullptr; }
+    if (g_Game) {
+        g_Game->Shutdown();
+        g_Game.reset();
+    }
 }
 
 void Update(float deltaTime)
 {
-    //std::cout << "dt:" << deltaTime * 1000.0f << "ms" << std::endl;
-    if (g_World) { g_World->Update(deltaTime);}
+    if (g_Game) g_Game->Update(deltaTime);
 }
 
 void Draw()
 {
-    if (!g_pGraphics)return;
-
-    //描画開始
-    g_pGraphics->BeginFrame(0.0f, 0.0f, 1.0f, 1.0f);
-
-    //World一括描画
-    if (g_World) { g_World->Draw(); }
-
-    //描画終了
-    g_pGraphics->EndFrame();
+    if (g_Game) g_Game->Draw();
 }
 
 //FPS制御関数の定義

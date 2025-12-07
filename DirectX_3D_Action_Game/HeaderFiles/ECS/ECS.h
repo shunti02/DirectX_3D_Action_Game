@@ -23,13 +23,13 @@
 template<typename T>
 class ComponentPool : public IComponentPool {
 public:
-	ComponentPool(size_t capacity = ECSConfig::MAX_COMPONENTS) {
+	ComponentPool(size_t capacity = ECSConfig::MAX_ENTITIES) {
 		data.resize(capacity);
 	}
 	//データのリセット
 	void Set(EntityID entityID, T component) {
 		if (entityID >= data.size()) {
-			data.resize(ECSConfig::MAX_COMPONENTS);
+			data.resize(ECSConfig::MAX_ENTITIES);
 		}
 		data[entityID] = component;
 	}
@@ -50,9 +50,9 @@ private:
 class Registry {
 public:
 	Registry() {
-		entityComponentMasks.resize(ECSConfig::MAX_COMPONENTS);
+		entityComponentMasks.resize(ECSConfig::MAX_ENTITIES);
 		//IDプールの初期化
-		for (EntityID i = 0; i < ECSConfig::MAX_COMPONENTS; ++i) {
+		for (EntityID i = 0; i < ECSConfig::MAX_ENTITIES; ++i) {
 			freeEntities.push_back(i);
 		}
 	}
@@ -67,6 +67,7 @@ public:
 	}
 	//Entity削除
 	void DestroyEntity(EntityID entity) {
+		if (entity >= entityComponentMasks.size()) return;
 		entityComponentMasks[entity].reset();
 		freeEntities.push_back(entity);
 		activeEntityCount--;
@@ -96,6 +97,7 @@ public:
 	//コンポーネントを持っているかどうか
 	template <typename T>
 	bool HasComponent(EntityID entity)const {
+		if (entity >= entityComponentMasks.size()) return false;
 		const auto componentID = ComponentType<T>::GetID();
 		return entityComponentMasks[entity].test(componentID);
 	}
