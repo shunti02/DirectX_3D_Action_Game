@@ -149,6 +149,9 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h">
       <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\Colors.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\SimplePS.hlsl">
