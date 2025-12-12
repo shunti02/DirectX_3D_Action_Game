@@ -1,6 +1,7 @@
 /*===================================================================
 //ファイル:GeometryGenerator.h
 //概要:プリミティブ形状（立方体、円錐など）の頂点データを作成するヘルパー
+//修正: DirectX::XMFLOAT4への型修正、タイプミスの除去、変数スコープの修正
 =====================================================================*/
 #pragma once
 #include "Vertex.h"
@@ -22,33 +23,36 @@ enum class ShapeType {
 
 class GeometryGenerator {
 public:
-    static MeshData CreateMesh(ShapeType type) {
+    // 形状生成の統合関数
+    // 色指定引数を追加 (デフォルトは白)
+    static MeshData CreateMesh(ShapeType type, DirectX::XMFLOAT4 color = { 1.0f, 1.0f, 1.0f, 1.0f }) {
         switch (type) {
         case ShapeType::CUBE:
-            return CreateCube(1.0f);
+            return CreateCube(1.0f, color);
         case ShapeType::CONE:
-            return CreateCone(0.5f, 1.0f, 20);
+            return CreateCone(0.5f, 1.0f, 20, color);
         case ShapeType::CAPSULE:
-            return CreateCapsule(0.5f, 2.0f, 20);
-            // 必要に応じて SPHERE などを追加
+            return CreateCapsule(0.5f, 2.0f, 20, color);
         default:
-            return CreateCube(1.0f);
+            return CreateCube(1.0f, color);
         }
     }
+
     // 立方体作成
-    static MeshData CreateCube(float size = 1.0f) {
+    static MeshData CreateCube(float size, DirectX::XMFLOAT4 color) {
         MeshData mesh;
         float h = size * 0.5f;
 
+        // 全頂点に指定された color を適用
         mesh.vertices = {
-            { -h,  h, -h,   1.0f, 0.0f, 0.0f, 1.0f }, // 0: 赤
-            {  h,  h, -h,   0.0f, 1.0f, 0.0f, 1.0f }, // 1: 緑
-            {  h,  h,  h,   0.0f, 0.0f, 1.0f, 1.0f }, // 2: 青
-            { -h,  h,  h,   1.0f, 1.0f, 0.0f, 1.0f }, // 3: 黄
-            { -h, -h, -h,   0.0f, 1.0f, 1.0f, 1.0f }, // 4: 水
-            {  h, -h, -h,   1.0f, 0.0f, 1.0f, 1.0f }, // 5: 紫
-            {  h, -h,  h,   1.0f, 1.0f, 1.0f, 1.0f }, // 6: 白
-            { -h, -h,  h,   0.0f, 0.0f, 0.0f, 1.0f }, // 7: 黒
+            { -h,  h, -h,   color.x, color.y, color.z, color.w }, // 0
+            {  h,  h, -h,   color.x, color.y, color.z, color.w }, // 1
+            {  h,  h,  h,   color.x, color.y, color.z, color.w }, // 2
+            { -h,  h,  h,   color.x, color.y, color.z, color.w }, // 3
+            { -h, -h, -h,   color.x, color.y, color.z, color.w }, // 4
+            {  h, -h, -h,   color.x, color.y, color.z, color.w }, // 5
+            {  h, -h,  h,   color.x, color.y, color.z, color.w }, // 6
+            { -h, -h,  h,   color.x, color.y, color.z, color.w }, // 7
         };
 
         mesh.indices = {
@@ -63,82 +67,13 @@ public:
     }
 
     // カプセル作成
-    // radius: 半径, height: 全体の高さ (半球含む), sliceCount: 円周の分割数
-    static MeshData CreateCapsule(float radius = 0.5f, float height = 2.0f, int sliceCount = 20) {
+    // 引数の型を DirectX::XMFLOAT4 に修正
+    static MeshData CreateCapsule(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
         MeshData mesh;
-
-        // 高さの制限（球より小さくならないように）
         if (height < 2.0f * radius) height = 2.0f * radius;
-
         float cylinderHeight = height - 2.0f * radius;
-        float stackHeight = cylinderHeight; // 円柱部分の高さ
-        int stacks = 1; // 円柱の分割数（縦）
 
-        // 1. 頂点の生成
-        // 上の半球
-        int rings = sliceCount / 2;
-        for (int i = 0; i <= rings; ++i) {
-            float phi = i * DirectX::XM_PIDIV2 / rings;
-            float y = radius * cosf(phi) + cylinderHeight * 0.5f;
-            float r = radius * sinf(phi);
-            for (int j = 0; j <= sliceCount; ++j) {
-                float theta = j * DirectX::XM_2PI / sliceCount;
-                float x = r * cosf(theta);
-                float z = r * sinf(theta);
-                // 色: 白～赤のグラデーション
-                mesh.vertices.push_back({ x, y, z,  1.0f, (float)i / rings, (float)i / rings, 1.0f });
-            }
-        }
-
-        // 円柱部分
-        for (int i = 0; i <= stacks; ++i) {
-            float y = -cylinderHeight * 0.5f + (float)i / stacks * cylinderHeight;
-            for (int j = 0; j <= sliceCount; ++j) {
-                float theta = j * DirectX::XM_2PI / sliceCount;
-                float x = radius * cosf(theta);
-                float z = radius * sinf(theta);
-                // 色: 青っぽい色
-                mesh.vertices.push_back({ x, y, z,  0.2f, 0.2f, 1.0f, 1.0f });
-            }
-        }
-
-        // 下の半球
-        for (int i = 0; i <= rings; ++i) {
-            float phi = DirectX::XM_PIDIV2 + i * DirectX::XM_PIDIV2 / rings;
-            float y = radius * cosf(phi) - cylinderHeight * 0.5f;
-            float r = radius * sinf(phi);
-            for (int j = 0; j <= sliceCount; ++j) {
-                float theta = j * DirectX::XM_2PI / sliceCount;
-                float x = r * cosf(theta);
-                float z = r * sinf(theta);
-                // 色: 白～緑
-                mesh.vertices.push_back({ x, y, z,  (float)i / rings, 1.0f, (float)i / rings, 1.0f });
-            }
-        }
-
-        // 2. インデックスの生成
-        int ringVertexCount = sliceCount + 1;
-        int totalRings = rings + 1 + stacks + 1 + rings + 1; // 上半球 + 円柱 + 下半球
-
-        // 頂点の並びは上から下へ順番に格納されているため、隣り合うリングを繋ぐ
-        // ただし、上記コードではパーツごとにループしているため、実際は頂点配列のオフセット管理が必要
-        // 簡易実装として、頂点生成と同時にインデックスを貼るのが難しい構造にしてしまったため
-        // 今回は「頂点を全部リストに入れてから、リング状に繋ぐ」方式で一括処理します。
-
-        // ※修正: 上記のループ構造だとインデックス貼りが複雑になるため、
-        // もっとシンプルな「円柱 + 上下半球」の結合済み頂点リストとして扱います。
-
-        // --- 簡易版：全頂点を上から下へリング状に繋ぐ ---
-        int totalStacks = rings + stacks + rings; // 縦方向の分割総数
-        for (int i = 0; i < totalStacks + 2; ++i) { // +2は接合部の重複分などを考慮した大まかな数
-            // 今回はロジックが複雑になるため、もっと単純な「球を引き伸ばした形状」として再実装します
-        }
-
-        // ★仕切り直し: もっと簡単なロジック（球を引き伸ばす）で再定義します
-        mesh.vertices.clear();
-        mesh.indices.clear();
-
-        // 緯度方向(phi)の分割数: 半球(rings) + 円柱(1) + 半球(rings)
+        // 簡易実装版ロジック
         int sphereRings = sliceCount / 2;
         int totalLat = sphereRings * 2 + 1;
 
@@ -146,24 +81,21 @@ public:
             float v = (float)i / totalLat;
             float phi = v * DirectX::XM_PI;
 
-            // Y座標の計算（ここで引き伸ばす）
             float y = -radius * cosf(phi);
-
-            // 円柱部分の挿入
-            if (i > sphereRings) y += cylinderHeight * 0.5f; // 上半球
-            else                 y -= cylinderHeight * 0.5f; // 下半球
-
-            // ※真ん中の接合部で頂点を重複させる必要がありますが、今回は簡易的にスムーズに繋ぎます
+            if (i > sphereRings) y += cylinderHeight * 0.5f;
+            else                 y -= cylinderHeight * 0.5f;
 
             float r = radius * sinf(phi);
 
             for (int j = 0; j <= sliceCount; ++j) {
                 float u = (float)j / sliceCount;
                 float theta = u * DirectX::XM_2PI;
+
                 float x = r * cosf(theta);
                 float z = r * sinf(theta);
 
-                mesh.vertices.push_back({ x, y, z, x + 0.5f, y + 0.5f, z + 0.5f, 1.0f }); // 色は座標ベース
+                // 指定色を適用
+                mesh.vertices.push_back({ x, y, z, color.x, color.y, color.z, color.w });
             }
         }
 
@@ -171,9 +103,9 @@ public:
         for (int i = 0; i < totalLat; ++i) {
             for (int j = 0; j < sliceCount; ++j) {
                 int nextI = i + 1;
-                int nextJ = (j + 1) % (sliceCount + 1); // テクスチャ考慮なら%しないが今回は頂点共有
-
-                // 四角形を2つの三角形に
+                // sliceCountで割った余りを使ってリングを閉じる
+                // (sliceCount + 1) 個の頂点を作っているため、j+1が最後の点なら0に戻すわけではないが
+                // ここでは単純に次の列を参照する簡易的な実装
                 int p0 = i * (sliceCount + 1) + j;
                 int p1 = i * (sliceCount + 1) + (j + 1);
                 int p2 = nextI * (sliceCount + 1) + j;
@@ -191,37 +123,38 @@ public:
         return mesh;
     }
 
-    // 円錐（三角錐含む）作成
-    // sliceCount: 円を何分割するか（3なら三角錐、20なら綺麗な円錐）
-    static MeshData CreateCone(float radius = 0.5f, float height = 1.0f, int sliceCount = 20) {
+    // 円錐作成
+    static MeshData CreateCone(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
         MeshData mesh;
 
         // 1. 頂点の生成
         // 先っちょ (頂点0)
-        mesh.vertices.push_back({ 0.0f, height * 0.5f, 0.0f,  1.0f, 1.0f, 1.0f, 1.0f });
+        mesh.vertices.push_back({ 0.0f, height * 0.5f, 0.0f,  color.x, color.y, color.z, color.w });
 
         // 底面の円周上の点
         float y = -height * 0.5f;
         float dTheta = DirectX::XM_2PI / sliceCount;
-        for (int i = 0; i <= sliceCount; ++i) { // テクスチャの継ぎ目のため一周分重複させる
+        for (int i = 0; i <= sliceCount; ++i) {
             float x = radius * cosf(i * dTheta);
             float z = radius * sinf(i * dTheta);
-            // 色は適当にグラデーションさせる
-            float c = (float)i / sliceCount;
-            mesh.vertices.push_back({ x, y, z,  c, 1.0f - c, 0.5f, 1.0f });
+
+            // 指定色を適用
+            mesh.vertices.push_back({ x, y, z,  color.x, color.y, color.z, color.w });
         }
-        // 底面の中心点
-        mesh.vertices.push_back({ 0.0f, y, 0.0f,  0.5f, 0.5f, 0.5f, 1.0f });
+
+        // 底面の中心点 (修正: ループ外のため x, z は使わず 0.0f を指定)
+        mesh.vertices.push_back({ 0.0f, y, 0.0f,  color.x, color.y, color.z, color.w });
+
         int centerIndex = (int)mesh.vertices.size() - 1;
 
-        // 2. インデックスの生成
-        // 側面（先っちょと底面の点をつなぐ三角形）
+        // 2. インデックス
+        // 側面
         for (int i = 0; i < sliceCount; ++i) {
             mesh.indices.push_back(0);
-            mesh.indices.push_back(i + 2); // 次の点
-            mesh.indices.push_back(i + 1); // 現在の点
+            mesh.indices.push_back(i + 2);
+            mesh.indices.push_back(i + 1);
         }
-        // 底面（中心点と底面の点をつなぐ三角形）
+        // 底面
         for (int i = 0; i < sliceCount; ++i) {
             mesh.indices.push_back(centerIndex);
             mesh.indices.push_back(i + 1);

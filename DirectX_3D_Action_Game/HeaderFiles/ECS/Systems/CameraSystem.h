@@ -4,6 +4,7 @@
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/CameraComponent.h"
 #include "App/Game.h"
+#include <cmath>
 
 using namespace DirectX;
 
@@ -13,31 +14,64 @@ public:
         auto registry = pWorld->GetRegistry();
         Input* input = Game::GetInstance()->GetInput();
 
-        // 全てのカメラEntityを更新（通常はメインカメラ1つ）
         for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
             if (!registry->HasComponent<CameraComponent>(id)) continue;
             if (!registry->HasComponent<TransformComponent>(id)) continue;
 
             auto& camera = registry->GetComponent<CameraComponent>(id);
-            auto& trans = registry->GetComponent<TransformComponent>(id);
+            auto& cameraTrans = registry->GetComponent<TransformComponent>(id);
 
-            //矢印キーでのカメラ移動 (デバッグ用)
-            float camSpeed = 10.0f * dt;
-            if (input->IsKey(VK_UP))    trans.position.z += camSpeed;
-            if (input->IsKey(VK_DOWN))  trans.position.z -= camSpeed;
-            if (input->IsKey(VK_LEFT))  trans.position.x -= camSpeed;
-            if (input->IsKey(VK_RIGHT)) trans.position.x += camSpeed;
+            // ★追従対象がいる場合の処理
+            if (camera.targetEntityID != ECSConfig::INVALID_ID &&
+                registry->HasComponent<TransformComponent>(camera.targetEntityID))
+            {
+                // ターゲット（プレイヤー）のTransformを取得
+                auto& targetTrans = registry->GetComponent<TransformComponent>(camera.targetEntityID);
 
-            // 1. ビュー行列の計算 (カメラの位置と回転から)
-            // 簡易的に、回転はまだ考慮せず「位置」だけ反映させます
-            // 本格的なFPSカメラなどはここに回転計算を追加します
-            XMVECTOR eye = XMVectorSet(trans.position.x, trans.position.y, trans.position.z, 0.0f);
-            XMVECTOR focus = XMVectorSet(trans.position.x, trans.position.y, trans.position.z + 1.0f, 0.0f); // 原点を見る
-            XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);    // 上方向
+                // ターゲットの位置
+                XMVECTOR targetPos = XMVectorSet(targetTrans.position.x, targetTrans.position.y, targetTrans.position.z, 0.0f);
 
-            camera.view = XMMatrixLookAtLH(eye, focus, up);
+                // 注視点（ターゲットの座標 + 腰へのオフセット）
+                XMVECTOR focus = targetPos + XMVectorSet(0.0f, camera.lookAtOffset, 0.0f, 0.0f);
 
-            // 2. プロジェクション行列の計算 (遠近法の設定)
+                // カメラの位置計算
+                // 簡易的にターゲットの背後に配置（回転はターゲットのY回転を利用するとTPSらしくなります）
+                // ここではターゲットの回転に合わせて背後に回る計算をします
+
+                // ターゲットのY軸回転（ラジアン）
+                float angleY = targetTrans.rotation.y;
+
+                // 背後へのベクトル計算 (Z+が前とした場合)
+                // X = sin(angle), Z = cos(angle) が前方ベクトル
+                float eyeX = targetTrans.position.x - sinf(angleY) * camera.distance;
+                float eyeZ = targetTrans.position.z - cosf(angleY) * camera.distance;
+                float eyeY = targetTrans.position.y + camera.height;
+
+                XMVECTOR eye = XMVectorSet(eyeX, eyeY, eyeZ, 0.0f);
+                XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+
+                // ビュー行列更新
+                camera.view = XMMatrixLookAtLH(eye, focus, up);
+
+                // TransformComponent側も同期させておく（他のシステムで使うかもしれないため）
+                cameraTrans.position = { eyeX, eyeY, eyeZ };
+            }
+            // ★追従対象がいない場合（デバッグ移動）
+            else
+            {
+                float camSpeed = 10.0f * dt;
+                if (input->IsKey(VK_UP))    cameraTrans.position.z += camSpeed;
+                if (input->IsKey(VK_DOWN))  cameraTrans.position.z -= camSpeed;
+                if (input->IsKey(VK_LEFT))  cameraTrans.position.x -= camSpeed;
+                if (input->IsKey(VK_RIGHT)) cameraTrans.position.x += camSpeed;
+
+                XMVECTOR eye = XMVectorSet(cameraTrans.position.x, cameraTrans.position.y, cameraTrans.position.z, 0.0f);
+                XMVECTOR focus = XMVectorSet(cameraTrans.position.x, cameraTrans.position.y, cameraTrans.position.z + 1.0f, 0.0f);
+                XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+                camera.view = XMMatrixLookAtLH(eye, focus, up);
+            }
+
+            // プロジェクション行列（共通）
             camera.projection = XMMatrixPerspectiveFovLH(
                 camera.fov, camera.aspectRatio, camera.nearZ, camera.farZ
             );

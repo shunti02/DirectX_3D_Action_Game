@@ -157,6 +157,7 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\RenderSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\World.h" />
+    <ClInclude Include="HeaderFiles\Engine\Colors.h" />
     <ClInclude Include="HeaderFiles\Engine\GeometryGenerator.h" />
     <ClInclude Include="HeaderFiles\Engine\Graphics.h" />
     <ClInclude Include="HeaderFiles\Engine\Input.h" />

@@ -62,9 +62,6 @@ public:
 
         context->VSSetConstantBuffers(0, 1, pConstantBuffer.GetAddressOf());
 
-        static float angle = 0.0f;
-        angle += 0.02f; // 回転スピード
-
         // ※ECSの正規ループ（本来はViewなどを使うが、簡易的に全ID走査）
         for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
             // TransformとMeshを持っているか確認
@@ -79,7 +76,7 @@ public:
             XMMATRIX S = XMMatrixScaling(trans.scale.x, trans.scale.y, trans.scale.z);
 
             // 2. 回転行列 (Rotation: ラジアン)
-            XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y + angle, trans.rotation.z);
+            XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y , trans.rotation.z);
 
             // 3. 平行移動行列 (Translation)
             XMMATRIX T = XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
@@ -87,23 +84,6 @@ public:
             // 4. ワールド行列の合成 (順番重要: S -> R -> T)
             // 拡大してから、回して、移動する
             XMMATRIX worldMatrix = S * R * T;
-
-            // ※テスト用: プレイヤーだけクルクル回してみる（IDが0なら回す、のような簡易判定）
-            if (id == 0) {
-                static float rotY = 0.0f; rotY += 0.02f;
-                worldMatrix = S * XMMatrixRotationY(rotY) * T;
-            }
-
-            //// 5. 転置してGPUへ送る
-            //ConstantBufferData cbData;
-            //cbData.transform = XMMatrixTranspose(worldMatrix);
-
-            //context->UpdateSubresource(pConstantBuffer.Get(), 0, nullptr, &cbData, 0, 0);
-            //// -------------------------------------------------------
-
-            //// 頂点バッファをセット
-            //ID3D11Buffer* vbs[] = { mesh.pVertexBuffer.Get() };
-            //context->IASetVertexBuffers(0, 1, vbs, &mesh.stride, &mesh.offset);
 
             //// 描画実行！
             //context->Draw(mesh.vertexCount, 0);
