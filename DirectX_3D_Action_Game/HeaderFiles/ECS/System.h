@@ -7,8 +7,7 @@
 //更新履歴:
 //2025/12/05:新規作成
 =====================================================================*/
-#ifndef SYSTEM_H
-#define SYSTEM_H
+#pragma once
 //前方宣言
 class World;
 
@@ -29,5 +28,3 @@ protected:
 	//ECS全体の管理者ポインタ
 	World* pWorld = nullptr;
 };
-
-#endif //SYSTEM_H
