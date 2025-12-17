@@ -4,9 +4,16 @@
 =====================================================================*/
 #include "Engine/Graphics.h"
 #include <iostream> // デバッグ出力用
+#include "../ImGui/imgui.h"
+#include "../ImGui/imgui_impl_win32.h"
+#include "../ImGui/imgui_impl_dx11.h"
 
 Graphics::Graphics() {}
-Graphics::~Graphics() {}
+Graphics::~Graphics() {
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+}
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)
 {
@@ -263,4 +270,33 @@ bool Graphics::CreateIndexBuffer(const std::vector<UINT>& indices, ID3D11Buffer*
 
     HRESULT hr = pDevice->CreateBuffer(&bd, &initData, ppBuffer);
     return SUCCEEDED(hr);
+}
+
+// ---------------------------------------------------------
+// ImGui管理関数の実装
+// ---------------------------------------------------------
+void Graphics::InitUI(HWND hWnd)
+{
+    // ImGuiコンテキスト作成
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    // ImGuiスタイル設定
+    ImGui::StyleColorsDark();
+    // Win32 + DirectX11用の初期化
+    ImGui_ImplWin32_Init(hWnd);
+    ImGui_ImplDX11_Init(pDevice.Get(), pContext.Get());
+}
+void Graphics::BeginUI()
+{
+    // ImGuiフレーム開始
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+}
+void Graphics::EndUI()
+{
+    // ImGuiフレーム終了・描画
+    ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }

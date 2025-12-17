@@ -50,6 +50,11 @@ public:
 		EntityID id = registry->CreateEntity();
 		return EntityBuilder(this, id);
 	}
+	//コンポーネント追加のラッパー関数
+	template <typename T, typename...Args>
+	void AddComponent(EntityID id, Args&&...args) {
+		registry->AddComponent<T>(id, std::forward<Args>(args)...);
+	}
 	//Entity削除
 	void DestroyEntity(EntityID id) {
 		registry->DestroyEntity(id);

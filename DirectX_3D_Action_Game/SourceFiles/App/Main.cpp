@@ -16,6 +16,8 @@
 #include <cstdio>
 #include <crtdbg.h>
 #pragma comment(lib, "winmm.lib")
+
+extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 /*----------------------------------------------------------
 //内部変数・定数
 ------------------------------------------------------------*/
@@ -114,6 +116,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 //ウィンドウプロシージャ
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
+        return true;
    if(msg == WM_DESTROY)PostQuitMessage(0);
    if(msg == WM_KEYDOWN && wParam == VK_ESCAPE)PostQuitMessage(0);
    return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -174,4 +178,23 @@ bool IsFrameReady()
     //時間が経過したら計測開始時間を更新してtrueを返す
     g_TimeStart = g_TimeEnd;
     return true;
+}
+
+void DebugLog(const char* format, ...)
+{
+#ifdef _DEBUG
+    char buffer[1024];
+    va_list args;
+    va_start(args, format);
+    //フォーマットに従って文字列を生成
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end (args);
+
+    //標準出力に出力
+    std::cout << "[LOG]" << buffer << std::endl;
+
+	//VisualStudioのデバッグ出力ウィンドウにも出力
+    OutputDebugString(buffer);
+    OutputDebugString("\n");
+#endif
 }

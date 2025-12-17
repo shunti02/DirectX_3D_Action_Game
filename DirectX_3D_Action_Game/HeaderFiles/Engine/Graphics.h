@@ -39,6 +39,10 @@ public:
     bool CreateVertexBuffer(const std::vector<Vertex>& vertices, ID3D11Buffer** ppBuffer);
     bool CreateIndexBuffer(const std::vector<UINT>& indices, ID3D11Buffer** ppBuffer);
 
+    void InitUI(HWND hWnd);
+	void BeginUI();
+	void EndUI();
+
 private:
     ComPtr<ID3D11Device> pDevice;
     ComPtr<ID3D11DeviceContext> pContext;
