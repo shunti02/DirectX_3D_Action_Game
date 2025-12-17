@@ -131,6 +131,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ImGui\imgui.cpp" />
+    <ClCompile Include="ImGui\imgui_draw.cpp" />
+    <ClCompile Include="ImGui\imgui_impl_dx11.cpp" />
+    <ClCompile Include="ImGui\imgui_impl_win32.cpp" />
+    <ClCompile Include="ImGui\imgui_tables.cpp" />
+    <ClCompile Include="ImGui\imgui_widgets.cpp" />
     <ClCompile Include="SourceFiles\App\Game.cpp" />
     <ClCompile Include="SourceFiles\App\Main.cpp" />
     <ClCompile Include="SourceFiles\ECS\ECS.cpp" />
@@ -166,6 +172,14 @@
     <ClInclude Include="HeaderFiles\Scene\BaseScene.h" />
     <ClInclude Include="HeaderFiles\Scene\GameScene.h" />
     <ClInclude Include="HeaderFiles\Scene\SceneManager.h" />
+    <ClInclude Include="ImGui\imconfig.h" />
+    <ClInclude Include="ImGui\imgui.h" />
+    <ClInclude Include="ImGui\imgui_impl_dx11.h" />
+    <ClInclude Include="ImGui\imgui_impl_win32.h" />
+    <ClInclude Include="ImGui\imgui_internal.h" />
+    <ClInclude Include="ImGui\imstb_rectpack.h" />
+    <ClInclude Include="ImGui\imstb_textedit.h" />
+    <ClInclude Include="ImGui\imstb_truetype.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\SimplePS.hlsl">

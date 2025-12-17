@@ -1,5 +1,6 @@
 #define NOMINMAX 
 
+#include "App/Main.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/World.h"
 #include "ECS/Components/TransformComponent.h"
@@ -71,6 +72,52 @@ static float SegmentToSegmentDistSq(
     return XMVectorGetX(XMVector3LengthSq(outC1 - outC2));
 }
 
+
+// -----------------------------------------------------------------------
+// OBB取得関数の実装
+// -----------------------------------------------------------------------
+OBB PhysicsSystem::GetOBB(EntityID id) {
+    auto registry = pWorld->GetRegistry();
+    OBB obb = {};
+    //初期化
+    XMStoreFloat4x4(&obb.worldMatrix, XMMatrixIdentity());
+    obb.center = { 0,0,0 };
+	obb.extents = { 0.5f,0.5f,0.5f };
+
+    if (!registry->HasComponent<TransformComponent>(id) ||
+        !registry->HasComponent<ColliderComponent>(id)) {
+        return obb;
+    }
+
+    const auto& trans = registry->GetComponent<TransformComponent>(id);
+    const auto& col = registry->GetComponent<ColliderComponent>(id);
+
+	//行列計算
+    XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z);
+    XMMATRIX T = XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
+    XMMATRIX world = R * T;
+
+    XMStoreFloat4x4(&obb.worldMatrix, world);
+
+    // 2. 中心 (Transformの位置)
+    obb.center = trans.position;
+
+    if (col.type == ColliderType::Type_Box) {
+        obb.extents = {
+            col.size.x * trans.scale.x * 0.5f,
+            col.size.y * trans.scale.y * 0.5f,
+            col.size.z * trans.scale.z * 0.5f
+        };
+    }
+    else {
+        // カプセルの場合 (半径はXスケール、高さはYスケールに依存とみなす)
+        float scaledRadius = col.radius * trans.scale.x;
+        float scaledHeight = col.height * trans.scale.y;
+        obb.extents = { scaledRadius, scaledHeight * 0.5f, scaledRadius };
+    }
+
+    return obb;
+}
 // -----------------------------------------------------------------------
 // Update関数の実装
 // -----------------------------------------------------------------------
@@ -105,25 +152,26 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
     auto& pCol = registry->GetComponent<ColliderComponent>(playerID);
     auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
 
-    auto& oTrans = registry->GetComponent<TransformComponent>(otherID);
-    auto& oCol = registry->GetComponent<ColliderComponent>(otherID);
+    OBB boxOBB = GetOBB(otherID);
 
-    // 行列計算
-    XMMATRIX R = XMMatrixRotationRollPitchYaw(oTrans.rotation.x, oTrans.rotation.y, oTrans.rotation.z);
-    XMMATRIX T = XMMatrixTranslation(oTrans.position.x, oTrans.position.y, oTrans.position.z);
-    XMMATRIX boxWorld = R * T;
+    // OBBから行列をロード
+    XMMATRIX boxWorld = XMLoadFloat4x4(&boxOBB.worldMatrix);
     XMVECTOR det;
     XMMATRIX boxInvWorld = XMMatrixInverse(&det, boxWorld);
 
-    // カプセル芯
-    float cylinderLen = std::max<float>(0.0f, pCol.height - 2.0f * pCol.radius);
+    // プレイヤーのカプセル定義
+    float pRadius = pCol.radius * pTrans.scale.x;
+    float pHeight = pCol.height * pTrans.scale.y;
+    // カプセル芯の計算
+    float cylinderLen = std::max<float>(0.0f, pHeight - 2.0f * pRadius);
     float halfLen = cylinderLen * 0.5f;
     XMVECTOR pos = XMLoadFloat3(&pTrans.position);
     XMVECTOR up = XMVectorSet(0, 1, 0, 0);
+    // 回転を考慮する場合
     XMVECTOR pStartW = pos - up * halfLen;
     XMVECTOR pEndW = pos + up * halfLen;
 
-    float radius = pCol.radius;
+    float radius = pRadius;
     float maxPenetration = -1.0f;
     XMVECTOR finalPushW = XMVectorZero();
     bool isHit = false;
@@ -131,16 +179,18 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
     // --- [判定A] カプセル線分 vs 箱 (ローカル空間) ---
     XMVECTOR pStartL = XMVector3TransformCoord(pStartW, boxInvWorld);
     XMVECTOR pEndL = XMVector3TransformCoord(pEndW, boxInvWorld);
-    float hx = oCol.size.x * 0.5f;
-    float hy = oCol.size.y * 0.5f;
-    float hz = oCol.size.z * 0.5f;
+    float hx = boxOBB.extents.x;
+    float hy = boxOBB.extents.y;
+    float hz = boxOBB.extents.z;
 
     XMVECTOR segmentVec = pEndL - pStartL;
     float segLen = XMVectorGetX(XMVector3Length(segmentVec));
-    int steps = static_cast<int>(segLen / (radius * 0.5f)) + 2;
+    // 判定密度
+    int steps = static_cast<int>(segLen / (radius * 0.05f)) + 2;
 
     for (int i = 0; i < steps; ++i) {
         float t = (float)i / (steps - 1);
+        if (steps <= 1) t = 0.5f;
         XMVECTOR pointL = pStartL + segmentVec * t;
         XMFLOAT3 p; XMStoreFloat3(&p, pointL);
 
@@ -151,9 +201,10 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
         float dx = p.x - cx; float dy = p.y - cy; float dz = p.z - cz;
         float distSq = dx * dx + dy * dy + dz * dz;
 
-        if (distSq < radius * radius) {
+        if (distSq < (radius * radius) + 0.0001f) {
             float dist = std::sqrt(distSq);
             float pen = radius - dist;
+            if (pen <= 0.0f) pen = 0.001f;
             XMVECTOR pushL;
             if (dist > 0.00001f) {
                 pushL = XMVectorSet(dx / dist, dy / dist, dz / dist, 0);
@@ -217,6 +268,8 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
 
     // --- 衝突解決 ---
     if (isHit) {
+        //衝突ログ
+        DebugLog("Hit Detected! Player vs Entity(%d)", otherID);
         XMVECTOR currentPos = XMLoadFloat3(&pTrans.position);
         currentPos += finalPushW;
         XMStoreFloat3(&pTrans.position, currentPos);

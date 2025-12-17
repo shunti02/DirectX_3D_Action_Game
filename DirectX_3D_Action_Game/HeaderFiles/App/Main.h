@@ -40,4 +40,6 @@ void Init(HWND hWnd);//初期化
 void UnInit();//終了処理
 void Update(float deltaTime);//更新処理
 void Draw();//描画処理
+//デバッグログ関数
+void DebugLog(const char* format, ...);
 #endif //MAIN_H

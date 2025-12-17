@@ -1,9 +1,9 @@
 /*===================================================================
 //ファイル:EntityFactory.h
-//概要:Entityのプレハブ（ひな形）作成関数群
-//修正: CreateShapeの重複を削除し、Colors.hを使用するように統一
+//概要:Entityの生成を管理するファクトリー（共通化対応版）
 =====================================================================*/
 #pragma once
+#include "App/Main.h"
 #include "ECS/World.h"
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/MeshComponent.h"
@@ -13,138 +13,143 @@
 #include "App/Game.h"
 #include "Engine/GeometryGenerator.h"
 #include "Engine/Vertex.h"
-#include "Engine/Colors.h" // ★色定義のインクルード
+#include "Engine/Colors.h"
 #include <vector>
+#include <string>
+#include <iostream>
 #include <DirectXMath.h>
 
-namespace EntityFactory {
-    // カメラを作成する
-    inline EntityID CreateCamera(World* world, float x, float y, float z) {
-        return world->CreateEntity()
-            .AddComponent<TransformComponent>(x, y, z)
-            .AddComponent<CameraComponent>()
-            .Build();
-    }
+// 生成パラメータ構造体
+struct EntitySpawnParams {
+    std::string type;           // "Player", "Enemy", "Ground", "Camera" 等
+    DirectX::XMFLOAT3 position = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT3 rotation = { 0.0f, 0.0f, 0.0f };
+    DirectX::XMFLOAT3 scale = { 1.0f, 1.0f, 1.0f };
 
-    // 汎用メッシュ作成ヘルパー
-    inline void AttachMeshData(EntityID id, World* world, const MeshData& data) {
+    // オプション（必要に応じて拡張）
+    std::string name = "";      // デバッグ識別用など
+};
+
+namespace EntityFactory {
+
+    // 内部ヘルパー: メッシュとコライダーをセットアップする
+    inline void AttachMeshAndCollider(EntityID id, World* world, ShapeType shape, DirectX::XMFLOAT4 color, ColliderType colType, float cx, float cy, float cz) {
+        // メッシュ生成
+        MeshData data = GeometryGenerator::CreateMesh(shape, color);
+
+        // MeshComponent設定
         auto& mesh = world->GetComponent<MeshComponent>(id);
         mesh.vertexCount = (UINT)data.vertices.size();
         mesh.indexCount = (UINT)data.indices.size();
         mesh.stride = sizeof(Vertex);
 
+        // GPUバッファ作成
         Graphics* g = Game::GetInstance()->GetGraphics();
         g->CreateVertexBuffer(data.vertices, mesh.pVertexBuffer.GetAddressOf());
         g->CreateIndexBuffer(data.indices, mesh.pIndexBuffer.GetAddressOf());
+
+        // ColliderComponent設定
+        auto& col = world->GetComponent<ColliderComponent>(id);
+        if (colType == ColliderType::Type_Box) {
+            col.SetBox(cx, cy, cz);
+        }
+        else if (colType == ColliderType::Type_Capsule) {
+            // カプセルの場合、cxを半径、cyを高さとして扱う規約にする
+            col.SetCapsule(cx, cy);
+        }
     }
 
-    // ★修正箇所: CreateShapeはこれ1つだけにする (古いものは削除)
-    // デフォルト引数を Colors::White に設定
-    inline void CreateShape(EntityID id, World* world, ShapeType type, DirectX::XMFLOAT4 color = Colors::White) {
-        // GeometryGeneratorに色を渡す
-        MeshData data = GeometryGenerator::CreateMesh(type, color);
-        AttachMeshData(id, world, data);
-    }
-
-    // プレイヤーを作成する
-    inline EntityID CreatePlayer(World* world,
-        float x, float y, float z,
-        float rx = 0.0f, float ry = 0.0f, float rz = 0.0f,
-        float sx = 1.0f, float sy = 1.0f, float sz = 1.0f) {
-        EntityID entity = world->CreateEntity()
-            .AddComponent<TransformComponent>(x, y, z, rx, ry, rz, sx, sy, sz)
-            .AddComponent<MeshComponent>()
-            .AddComponent<PlayerComponent>(5.0f)
-            .AddComponent<ColliderComponent>()
-            .Build();
-
-        // 基準サイズ
-        float baseRadius = 0.5f;
-        float baseHeight = 2.0f;
-
-        // コライダーの設定 (カプセル)
-        auto& col = world->GetComponent<ColliderComponent>(entity);
-        col.SetCapsule(baseRadius * sx, baseHeight * sy);
-
-        // メッシュの設定 (カプセル) - 色: Blue
-        CreateShape(entity, world, ShapeType::CAPSULE, Colors::Blue);
-        return entity;
-    }
-
-    // 敵を作成する
-    inline EntityID CreateEnemy(World* world,
-        float x, float y, float z,
-        float rx = 0.0f, float ry = 0.0f, float rz = 0.0f,
-        float sx = 1.0f, float sy = 1.0f, float sz = 1.0f) {
-        EntityID entity = world->CreateEntity()
+    // ★統合生成関数
+    inline EntityID CreateEntity(World* world, const EntitySpawnParams& params) {
+        // 1. ベースEntity作成 & Transform登録
+        EntityID id = world->CreateEntity()
             .AddComponent<TransformComponent>(
-                x, y, z,
-                rx, ry, rz,
-                sx, sy, sz)
-            .AddComponent<MeshComponent>()
-            .AddComponent<ColliderComponent>()
+                params.position.x, params.position.y, params.position.z,
+                params.rotation.x, params.rotation.y, params.rotation.z,
+                params.scale.x, params.scale.y, params.scale.z
+            )
             .Build();
 
-        // コライダーの設定 (ボックス)
-        auto& col = world->GetComponent<ColliderComponent>(entity);
-        col.SetBox(1.0f * sx, 1.0f * sy, 1.0f * sz);
+        // 2. タイプ別コンポーネント構成
+        if (params.type == "Player") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
+            world->AddComponent<PlayerComponent>(id, 5.0f); // moveSpeed
 
-        // メッシュの設定 (キューブ) - 色: Yellow
-        CreateShape(entity, world, ShapeType::CUBE, Colors::Yellow);
+            // カプセル形状 (半径0.5, 高さ2.0)
+            // Scaleを反映させる: 半径はXスケール、高さはYスケールを基準にする
+            AttachMeshAndCollider(id, world, ShapeType::CAPSULE, Colors::Blue, ColliderType::Type_Capsule, 0.5f, 2.0f, 0.0f);
+            /*float radius = 0.5f * params.scale.x;
+            float height = 2.0f * params.scale.y;
+            AttachMeshAndCollider(id, world, ShapeType::CAPSULE, Colors::Blue, ColliderType::Type_Capsule, radius, height, 0.0f);*/
 
-        return entity;
-    }
+            DebugLog("[Factory] Created Player ID: %d", id);
+        }
+        else if (params.type == "Enemy") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-    // 敵を作成する
-    inline EntityID CreateGround(World* world,
-        float x, float y, float z,
-        float rx = 0.0f, float ry = 0.0f, float rz = 0.0f,
-        float sx = 1.0f, float sy = 1.0f, float sz = 1.0f) {
-        EntityID entity = world->CreateEntity()
-            .AddComponent<TransformComponent>(
-                x, y, z,
-                rx, ry, rz, 
-                sx, sy, sz)
-            .AddComponent<MeshComponent>()
-            .AddComponent<ColliderComponent>()
-            .Build();
+            // キューブ形状 (1x1x1)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Red, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+           /* AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Yellow, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
 
-        // コライダーの設定 (ボックス)
-        auto& col = world->GetComponent<ColliderComponent>(entity);
-        col.SetBox(1.0f * sx, 1.0f * sy, 1.0f * sz);
+            DebugLog("[Factory] Created Enemy ID: %d", id);
+        }
+        else if (params.type == "Enemy2") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-        // メッシュの設定 (キューブ) - 色: Yellow
-        CreateShape(entity, world, ShapeType::CUBE, Colors::Gray);
+            // キューブ形状 (1x1x1)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Yellow, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+            /* AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Yellow, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
 
-        return entity;
-    }
+            DebugLog("[Factory] Created Enemy2 ID: %d", id);
+        }
+        else if (params.type == "Ground") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-    // テスト用の三角形を作成する
-    inline EntityID CreateTestTriangle(World* world, float x, float y, float z) {
-        EntityID entity = world->CreateEntity()
-            .AddComponent<TransformComponent>(x, y, z)
-            .AddComponent<MeshComponent>() // 空のメッシュを追加
-            .Build();
+            // 床用キューブ (グレー)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Gray, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+          /*  AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Gray, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
+            DebugLog("[Factory] Created Ground ID: %d", id);
+        }
+        else if (params.type == "Ground2") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-        // 頂点データの作成（虹色の三角形）
-        std::vector<Vertex> vertices = {
-            // 位置(x,y,z)           色(r,g,b,a)
-            {  0.0f,  0.5f, 0.0f,    1.0f, 0.0f, 0.0f, 1.0f }, // 上：赤
-            {  0.5f, -0.5f, 0.0f,    0.0f, 1.0f, 0.0f, 1.0f }, // 右下：緑
-            { -0.5f, -0.5f, 0.0f,    0.0f, 0.0f, 1.0f, 1.0f }  // 左下：青
-        };
+            // 床用キューブ (グレー)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Magenta, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+            /*  AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Gray, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
+            DebugLog("[Factory] Created Ground2 ID: %d", id);
+        }
+        else if (params.type == "Ground3") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-        // メッシュコンポーネントにデータを流し込む
-        auto& mesh = world->GetComponent<MeshComponent>(entity);
-        mesh.vertexCount = static_cast<UINT>(vertices.size());
-        mesh.stride = sizeof(Vertex);
+            // 床用キューブ (グレー)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Magenta, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+            /*  AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Gray, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
+            DebugLog("[Factory] Created Ground3 ID: %d", id);
+        }
+        else if (params.type == "Ground4") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
 
-        // Graphicsクラスを使ってGPUバッファを作成
-        Game::GetInstance()->GetGraphics()->CreateVertexBuffer(
-            vertices,
-            mesh.pVertexBuffer.GetAddressOf()
-        );
+            // 床用キューブ (グレー)
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Magenta, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
+            /*  AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Gray, ColliderType::Type_Box, 1.0f * params.scale.x, 1.0f * params.scale.y, 1.0f * params.scale.z);*/
+            DebugLog("[Factory] Created Ground4 ID: %d", id);
+        }
+        else if (params.type == "Camera") {
+            world->AddComponent<CameraComponent>(id);
+            // カメラ固有の初期化が必要ならここで行う
+            DebugLog("[Factory] Created Camera ID: %d", id);
+        }
+        else {
+            DebugLog("[Warning] Unknown Entity Type: %s", params.type.c_str());
+        }
 
-        return entity;
+        return id;
     }
 }

@@ -14,6 +14,6 @@ struct PlayerComponent {
     bool isGrounded;            // ’n–Ê‚É‘«‚ª‚Â‚¢‚Ä‚¢‚é‚©H
 
     PlayerComponent(float speed = 5.0f)
-        : moveSpeed(speed), jumpPower(8.0f), gravity(15.0f),
+        : moveSpeed(speed), jumpPower(8.0f), gravity(25.0f),
         velocity(0, 0, 0), isGrounded(false) {}
 };
