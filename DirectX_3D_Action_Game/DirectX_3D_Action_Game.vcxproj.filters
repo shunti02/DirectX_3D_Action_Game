@@ -93,6 +93,21 @@
     <ClCompile Include="ImGui\imgui_widgets.cpp">
       <Filter>ImGui</Filter>
     </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\ActionSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\CameraSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\EnemySystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\PlayerSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\RenderSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HeaderFiles\Engine\Graphics.h">
@@ -215,7 +230,7 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\ActionSystem.h">
       <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
-    <ClInclude Include="HeaderFiles\ECS\Components\Roles.h">
+    <ClInclude Include="HeaderFiles\ECS\Components\RolesComponent.h">
       <Filter>HeaderFiles\ECS\Components</Filter>
     </ClInclude>
     <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h">
