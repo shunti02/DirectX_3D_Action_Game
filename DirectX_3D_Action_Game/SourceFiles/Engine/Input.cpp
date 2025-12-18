@@ -24,3 +24,22 @@ bool Input::IsKeyDown(int key) const {
 bool Input::IsKeyUp(int key) const {
     return !currentKeys[key] && previousKeys[key];
 }
+//マウス入力
+int GetMouseVK(int button) {
+    switch (button) {
+    case 0: return VK_LBUTTON;//左クリック
+    case 1: return VK_RBUTTON;//右クリック
+    case 2: return VK_MBUTTON;//中クリック
+    default: return 0;
+    }
+}
+
+bool Input::IsMouseKeyDown(int button) const {
+    int key = GetMouseVK(button);
+    return IsKeyDown(key);
+}
+
+bool Input::IsMouseKeyUp(int button) const {
+    int key = GetMouseVK(button);
+    return IsKeyUp(key);
+}

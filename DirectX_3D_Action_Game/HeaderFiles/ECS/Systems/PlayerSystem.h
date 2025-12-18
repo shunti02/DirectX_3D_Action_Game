@@ -6,14 +6,28 @@
 #include "ECS/System.h"
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/PlayerComponent.h"
+#include "ECS/Components/CameraComponent.h"
 #include "App/Game.h"
 
 class PlayerSystem : public System {
 public:
+    bool tabKeyPressed = false;//連打防止
+
     void Update(float dt) override {
         auto registry = pWorld->GetRegistry();
         Input* input = Game::GetInstance()->GetInput();
 
+        // --- キャラ切り替え (Tabキー) ---
+        if (input->IsKeyDown(VK_TAB)) {
+            if (!tabKeyPressed) {
+                tabKeyPressed = true;
+                SwitchCharacter(registry);
+            }
+        }
+        else {
+            tabKeyPressed = false;
+        }
+        // --- プレイヤー制御 ---
         for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
             if (!registry->HasComponent<PlayerComponent>(id)) continue;
 
@@ -23,20 +37,27 @@ public:
             // ---------------------------------------------------------
             // 1. 移動入力 (X, Z軸の速度設定)
             // ---------------------------------------------------------
-            player.velocity.x = 0.0f;
-            player.velocity.z = 0.0f;
+            if (player.isActive) {
+                player.velocity.x = 0.0f;
+                player.velocity.z = 0.0f;
 
-            if (input->IsKey('W')) player.velocity.z = player.moveSpeed;
-            if (input->IsKey('S')) player.velocity.z = -player.moveSpeed;
-            if (input->IsKey('A')) player.velocity.x = -player.moveSpeed;
-            if (input->IsKey('D')) player.velocity.x = player.moveSpeed;
+                if (input->IsKey('W')) player.velocity.z = player.moveSpeed;
+                if (input->IsKey('S')) player.velocity.z = -player.moveSpeed;
+                if (input->IsKey('A')) player.velocity.x = -player.moveSpeed;
+                if (input->IsKey('D')) player.velocity.x = player.moveSpeed;
 
-            // ---------------------------------------------------------
-            // 2. ジャンプ (接地している時だけ)
-            // ---------------------------------------------------------
-            if (input->IsKeyDown(VK_SPACE) && player.isGrounded) {
-                player.velocity.y = player.jumpPower; // 上方向へドーン！
-                player.isGrounded = false; // 空中に飛び出したのでfalse
+                // ---------------------------------------------------------
+                // 2. ジャンプ (接地している時だけ)
+                // ---------------------------------------------------------
+                if (input->IsKeyDown(VK_SPACE) && player.isGrounded) {
+                    player.velocity.y = player.jumpPower; // 上方向へドーン！
+                    player.isGrounded = false; // 空中に飛び出したのでfalse
+                }
+            }
+            else {
+                // 操作してないキャラは停止
+                player.velocity.x = 0.0f;
+                player.velocity.z = 0.0f;
             }
 
             // ---------------------------------------------------------
@@ -60,6 +81,35 @@ public:
             if (trans.position.y < -10.0f) {
                 trans.position = { 0.0f, 5.0f, 0.0f }; // 上空へ戻す
                 player.velocity = { 0.0f, 0.0f, 0.0f };
+            }
+        }
+    }
+
+private:
+    void SwitchCharacter(Registry* registry) {
+        EntityID nextActiveID = ECSConfig::INVALID_ID;
+
+        // 全プレイヤーの isActive を反転
+        for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+            if (registry->HasComponent<PlayerComponent>(id)) {
+                auto& player = registry->GetComponent<PlayerComponent>(id);
+                player.isActive = !player.isActive;
+
+                if (player.isActive) {
+                    nextActiveID = id;
+                    DebugLog("Switched to Player ID: %d", id);
+                }
+            }
+        }
+
+        // カメラターゲット更新
+        if (nextActiveID != ECSConfig::INVALID_ID) {
+            for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+                if (registry->HasComponent<CameraComponent>(id)) {
+                    auto& cam = registry->GetComponent<CameraComponent>(id);
+                    cam.targetEntityID = nextActiveID;
+                    break;
+                }
             }
         }
     }
