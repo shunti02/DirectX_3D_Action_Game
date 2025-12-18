@@ -15,7 +15,7 @@
 #include "ECS/Components/ActionComponent.h"
 #include "ECS/Components/AttackBoxComponent.h"
 #include "ECS/Components/RecoveryBoxComponent.h"
-#include "ECS/Components/Roles.h"
+#include "ECS/Components/RolesComponent.h"
 #include "App/Game.h"
 #include "Engine/GeometryGenerator.h"
 #include "Engine/Vertex.h"

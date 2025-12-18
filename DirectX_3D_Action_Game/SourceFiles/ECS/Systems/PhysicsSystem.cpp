@@ -8,7 +8,7 @@
 #include "ECS/Components/PlayerComponent.h"
 #include "ECS/Components/AttackBoxComponent.h"
 #include "ECS/Components/RecoveryBoxComponent.h" // Åöí«â¡
-#include "ECS/Components/Roles.h"
+#include "ECS/Components/RolesComponent.h"
 #include "ECS/Components/StatusComponent.h"
 #include <vector>
 #include <cmath>

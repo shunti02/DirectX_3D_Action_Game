@@ -141,7 +141,12 @@
     <ClCompile Include="SourceFiles\App\Game.cpp" />
     <ClCompile Include="SourceFiles\App\Main.cpp" />
     <ClCompile Include="SourceFiles\ECS\ECS.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\ActionSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\CameraSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\EnemySystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PhysicsSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\PlayerSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\RenderSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\World.cpp" />
     <ClCompile Include="SourceFiles\Engine\Graphics.cpp" />
     <ClCompile Include="SourceFiles\Engine\Input.cpp" />
@@ -160,7 +165,7 @@
     <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h" />
-    <ClInclude Include="HeaderFiles\ECS\Components\Roles.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\RolesComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\StatusComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\TransformComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\ECS.h" />
