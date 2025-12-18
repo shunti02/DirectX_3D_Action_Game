@@ -106,6 +106,7 @@
       <ConformanceMode>true</ConformanceMode>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalIncludeDirectories>$(ProjectDir)HeaderFiles</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp14</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -151,14 +152,22 @@
     <ClInclude Include="HeaderFiles\ECS\AllComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\AllSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Component.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\ActionComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\AttackBoxComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\CameraComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\ColliderComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\EnemyComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\Roles.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\StatusComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\TransformComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\ECS.h" />
     <ClInclude Include="HeaderFiles\ECS\System.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\ActionSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\CameraSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\EnemySystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\RenderSystem.h" />

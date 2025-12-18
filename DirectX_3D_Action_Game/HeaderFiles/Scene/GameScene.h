@@ -8,7 +8,9 @@
 #include "ECS/Systems/RenderSystem.h"
 #include "ECS/Systems/CameraSystem.h"
 #include "ECS/Systems/PlayerSystem.h"
+#include "ECS/Systems/EnemySystem.h"
 #include "ECS/Systems/PhysicsSystem.h"
+#include "ECS/Systems/ActionSystem.h"
 #include <iostream>
 
 class GameScene : public BaseScene {
@@ -18,18 +20,37 @@ public:
     void Initialize() override {
         // システム登録
         pWorld->AddSystem<PlayerSystem>()->Init(pWorld.get());
+        pWorld->AddSystem<EnemySystem>()->Init(pWorld.get());
+        pWorld->AddSystem<ActionSystem>()->Init(pWorld.get());
         pWorld->AddSystem<PhysicsSystem>()->Init(pWorld.get());
         pWorld->AddSystem<CameraSystem>()->Init(pWorld.get());
         pWorld->AddSystem<RenderSystem>()->Init(pWorld.get());
 
         // --- エンティティ配置 (共通Factory利用) ---
 
-        // 1. プレイヤー生成
-        EntitySpawnParams playerParams;
-        playerParams.type = "Player";
-        playerParams.position = { 0.0f, 0.0f, 0.0f };
-        playerParams.scale = { 1.0f, 1.0f, 1.0f };
-        EntityID playerID = EntityFactory::CreateEntity(pWorld.get(), playerParams);
+       // ---------------------------------------------------------
+        // 1. プレイヤー生成 (2人)
+        // ---------------------------------------------------------
+        // 1人目: 攻撃担当 (青)
+        EntitySpawnParams player1Params;
+        player1Params.type = "Player";
+        player1Params.position = { 0.0f, 0.0f, 0.0f };
+        player1Params.scale = { 1.0f, 1.0f, 1.0f };
+		player1Params.color = Colors::Blue; // 青色
+        player1Params.role = PlayerRole::Attacker;
+        EntityID player1 = EntityFactory::CreateEntity(pWorld.get(), player1Params);
+
+        //1人目を操作可能にする
+        pWorld->GetComponent<PlayerComponent>(player1).isActive = true;
+
+        // 2人目: 回復担当 (緑)
+		EntitySpawnParams player2Params;
+		player2Params.type = "Player";
+		player2Params.position = { 2.0f, 0.0f, 0.0f };
+		player2Params.scale = { 1.0f, 1.0f, 1.0f };
+		player2Params.color = Colors::Green; // 緑色
+        player2Params.role = PlayerRole::Healer;
+        EntityFactory::CreateEntity(pWorld.get(), player2Params);
 
         // 2. カメラ生成
         EntitySpawnParams camParams;
@@ -39,7 +60,7 @@ public:
 
         // カメラの追従設定 (現状はFactory外で行う)
         auto& camComp = pWorld->GetComponent<CameraComponent>(cameraID);
-        camComp.targetEntityID = playerID;
+        camComp.targetEntityID = player1;
         camComp.distance = 10.0f;
         camComp.height = 4.0f;
         camComp.lookAtOffset = 0.0f;
@@ -47,15 +68,17 @@ public:
         // 3. 敵生成
         EntitySpawnParams enemyParams;
         enemyParams.type = "Enemy";
-        enemyParams.position = { 1.0f, 0.0f, 0.0f };
+        enemyParams.position = { 0.0f, 0.0f, 20.0f };
         enemyParams.scale = { 1.0f, 1.0f, 1.0f };
+        enemyParams.color = Colors::Red;
         EntityFactory::CreateEntity(pWorld.get(), enemyParams);
 
         // 3. 敵生成
         EntitySpawnParams enemy2Params;
         enemy2Params.type = "Enemy2";
-        enemy2Params.position = { 1.0f, 0.0f, 3.0f };
+        enemy2Params.position = { 3.0f, 0.0f, 20.0f };
         enemy2Params.scale = { 1.0f, 1.0f, 1.0f };
+        enemy2Params.color = Colors::Yellow;
         EntityFactory::CreateEntity(pWorld.get(), enemy2Params);
 
         // 4. 地面生成 (スケールで大きくする)

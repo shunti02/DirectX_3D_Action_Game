@@ -197,6 +197,30 @@
     <ClInclude Include="ImGui\imstb_truetype.h">
       <Filter>ImGui</Filter>
     </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\EnemyComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\EnemySystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\StatusComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\ActionComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\AttackBoxComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\ActionSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\Roles.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\SimplePS.hlsl">
