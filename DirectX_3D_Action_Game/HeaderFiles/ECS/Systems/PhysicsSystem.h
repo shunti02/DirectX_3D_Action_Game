@@ -17,4 +17,7 @@ public:
 private:
     // Õ“Ë”»’è‚Æ‰ğŒˆ‚ÌŠÖ”
     void CheckAndResolve(EntityID playerID, EntityID otherID);
+
+    void CheckAttackHit(EntityID attackID, EntityID targetID);
+    void CheckRecoveryHit(EntityID, EntityID);
 };
