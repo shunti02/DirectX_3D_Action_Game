@@ -4,6 +4,7 @@
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/PlayerComponent.h"
 #include "ECS/Components/CameraComponent.h"
+#include "ECS/Components/StatusComponent.h"
 #include "App/Game.h"
 
 void PlayerSystem::Update(float dt) {
@@ -28,10 +29,17 @@ void PlayerSystem::Update(float dt) {
         auto& trans = registry->GetComponent<TransformComponent>(id);
         auto& player = registry->GetComponent<PlayerComponent>(id);
 
+        bool isDead = false;
+        if (registry->HasComponent<StatusComponent>(id)) {
+            if (registry->GetComponent<StatusComponent>(id).hp <= 0) {
+                isDead = true;
+            }
+        }
+
         // ---------------------------------------------------------
         // 1. 移動入力 (X, Z軸の速度設定)
         // ---------------------------------------------------------
-        if (player.isActive) {
+        if (player.isActive && !isDead) {
             player.velocity.x = 0.0f;
             player.velocity.z = 0.0f;
 
@@ -52,6 +60,10 @@ void PlayerSystem::Update(float dt) {
             // 操作してないキャラは停止
             player.velocity.x = 0.0f;
             player.velocity.z = 0.0f;
+
+            if (player.isActive && isDead) {
+                SwitchCharacter(registry);
+            }
         }
 
         // ---------------------------------------------------------
@@ -73,8 +85,11 @@ void PlayerSystem::Update(float dt) {
 
         // 安全策: 地面より下（奈落）に落ちたらリセット
         if (trans.position.y < -10.0f) {
-            trans.position = { 0.0f, 5.0f, 0.0f }; // 上空へ戻す
-            player.velocity = { 0.0f, 0.0f, 0.0f };
+            // 死んでいないなら復帰、死んでるならそのまま
+            if (!isDead) {
+                trans.position = { 0.0f, 5.0f, 0.0f };
+                player.velocity = { 0.0f, 0.0f, 0.0f };
+            }
         }
     }
 }
@@ -82,22 +97,42 @@ void PlayerSystem::Update(float dt) {
 void PlayerSystem::SwitchCharacter(Registry* registry) {
     EntityID nextActiveID = ECSConfig::INVALID_ID;
 
-    // 全プレイヤーの isActive を反転
+    // 現在操作中のキャラを探す
+    EntityID currentID = ECSConfig::INVALID_ID;
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (registry->HasComponent<PlayerComponent>(id)) {
-            auto& player = registry->GetComponent<PlayerComponent>(id);
-            player.isActive = !player.isActive;
-
-            if (player.isActive) {
-                nextActiveID = id;
-                // DebugLog関数が未定義の場合は適宜修正してください
-                // DebugLog("Switched to Player ID: %d", id);
+            if (registry->GetComponent<PlayerComponent>(id).isActive) {
+                currentID = id;
+                break;
             }
         }
     }
 
-    // カメラターゲット更新
+    // 次の操作候補を探す (生存しているキャラを優先)
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (id == currentID) continue; // 自分以外
+        if (!registry->HasComponent<PlayerComponent>(id)) continue;
+
+        // 生存チェック
+        bool isAlive = true;
+        if (registry->HasComponent<StatusComponent>(id)) {
+            if (registry->GetComponent<StatusComponent>(id).hp <= 0) isAlive = false;
+        }
+
+        if (isAlive) {
+            nextActiveID = id;
+            break;
+        }
+    }
+
+    // 交代可能なキャラが見つかった場合のみ交代
     if (nextActiveID != ECSConfig::INVALID_ID) {
+        if (currentID != ECSConfig::INVALID_ID) {
+            registry->GetComponent<PlayerComponent>(currentID).isActive = false;
+        }
+        registry->GetComponent<PlayerComponent>(nextActiveID).isActive = true;
+
+        // カメラターゲット更新
         for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
             if (registry->HasComponent<CameraComponent>(id)) {
                 auto& cam = registry->GetComponent<CameraComponent>(id);

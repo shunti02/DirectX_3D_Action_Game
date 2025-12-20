@@ -7,8 +7,7 @@
 //XV—š—ğ:
 //2025/12/06:V‹Kì¬
 =====================================================================*/
-#ifndef WORLD_H
-#define WORLD_H
+#pragma once
 #include "ECS/ECS.h"
 #include "ECS/System.h"
 #include <vector>
@@ -95,5 +94,3 @@ private:
 	std::unique_ptr<Registry> registry;
 	std::vector<System*> systems;
 };
-
-#endif //WORLD_H

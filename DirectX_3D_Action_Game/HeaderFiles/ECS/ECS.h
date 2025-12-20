@@ -7,8 +7,7 @@
 //更新履歴:
 //2025/12/06:新規作成
 =====================================================================*/
-#ifndef ECS_H
-#define ECS_H
+#pragma once
 #include "Component.h"
 #include <vector>
 #include <unordered_map>
@@ -77,17 +76,26 @@ public:
 			pair.second->OnEntityDestroyed(entity);
 		}
 	}
-	//コンポーネント追加
+
+	// -----------------------------------------------------------------
+	// ★修正箇所: コンポーネント追加
+	// -----------------------------------------------------------------
 	template <typename T, typename...Args>
 	void AddComponent(EntityID entity, Args&&...args) {
 		const auto componentID = ComponentType<T>::GetID();
 
-		//データを取得してデータをリセット
+		//データを取得
 		auto pool = GetComponentPool<T>();
-		pool->Set(entity, T(std::forward<Args>(args)...));
+
+		// ★ここを修正しました！
+		// 修正前: pool->Set(entity, T(std::forward<Args>(args)...)); // 丸括弧 () はコンストラクタ必須
+		// 修正後: pool->Set(entity, T{std::forward<Args>(args)...}); // 波括弧 {} なら構造体もOK
+		pool->Set(entity, T{ std::forward<Args>(args)... });
+
 		//マスクをオン
 		entityComponentMasks[entity].set(componentID);
 	}
+
 	//コンポーネント取得
 	template <typename T>
 	T& GetComponent(EntityID entity) {
@@ -118,5 +126,3 @@ private:
 	std::vector<ComponentMask> entityComponentMasks;//誰が何を持っているか
 	std::unordered_map<const char*, std::shared_ptr<IComponentPool>> componentPools;
 };
-
-#endif //ECS_H

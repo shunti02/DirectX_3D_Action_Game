@@ -4,7 +4,8 @@
 =====================================================================*/
 #include "App/Game.h"
 #include "App/Main.h"
-#include "Scene/GameScene.h" // 最初のシーン
+#include "Scene/GameScene.h"
+#include "Scene/TitleScene.h"
 #include "../ImGui/imgui.h"
 
 Game* Game::instance = nullptr;
@@ -32,13 +33,16 @@ bool Game::Initialize(HWND hWnd) {
 	pGraphics->InitUI(hWnd);
 
     // 最初のシーンへ遷移 (GameScene)
-    pSceneManager->ChangeScene<GameScene>();
+    pSceneManager->ChangeScene<TitleScene>();
 
     return true;
 }
 
 void Game::Update(float dt) {
     pInput->Update();
+
+    // ImGui描画開始
+    pGraphics->BeginUI();
 
     if (pSceneManager) {
         pSceneManager->Update(dt);
@@ -51,8 +55,7 @@ void Game::Draw() {
     // 画面クリア（背景色：ダークグレー）
     pGraphics->BeginFrame(0.1f, 0.1f, 0.1f, 1.0f);
 
-	// ImGui描画開始
-	pGraphics->BeginUI();
+	
 
     // シーン描画
     if (pSceneManager) {

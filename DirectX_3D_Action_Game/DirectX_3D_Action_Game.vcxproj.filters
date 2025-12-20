@@ -52,6 +52,9 @@
     <Filter Include="ImGui">
       <UniqueIdentifier>{d10e2162-1b1d-45ca-b0c3-09d44d8597b0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="SourceFiles\Scene">
+      <UniqueIdentifier>{f849dafe-79b4-4dc6-be5a-eb55bfdb8da2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SourceFiles\App\Main.cpp">
@@ -106,6 +109,24 @@
       <Filter>SourceFiles\ECS\Systems</Filter>
     </ClCompile>
     <ClCompile Include="SourceFiles\ECS\Systems\RenderSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\UISystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\TitleScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\ResultScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\GameScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\GeometryGenerator.cpp">
+      <Filter>SourceFiles\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\PlayerAnimationSystem.cpp">
       <Filter>SourceFiles\ECS\Systems</Filter>
     </ClCompile>
   </ItemGroup>
@@ -235,6 +256,27 @@
     </ClInclude>
     <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h">
       <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\UISystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\TitleScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\ResultScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\AttackSphereComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\RecoverySphereComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\PlayerPartComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\PlayerAnimationSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

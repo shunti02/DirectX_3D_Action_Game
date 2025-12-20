@@ -20,4 +20,6 @@ private:
 
     void CheckAttackHit(EntityID attackID, EntityID targetID);
     void CheckRecoveryHit(EntityID, EntityID);
+    void CheckAttackSphereHit(EntityID attackID, EntityID targetID);
+    void CheckRecoverySphereHit(EntityID recoveryID, EntityID targetID);
 };
