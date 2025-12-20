@@ -7,22 +7,11 @@
 //çXêVóöó:
 //2025/12/06:êVãKçÏê¨
 =====================================================================*/
-#ifndef TRANSFORMCOMPONENT_H
-#define TRANSFORMCOMPONENT_H
+#pragma once
 #include <DirectXMath.h>
 
 struct TransformComponent {
-	DirectX::XMFLOAT3 position;
-	DirectX::XMFLOAT3 rotation;
-	DirectX::XMFLOAT3 scale;
-	TransformComponent(
-		float x = 0.0f, float y = 0.0f, float z = 0,
-		float rx = 0.0f, float ry = 0.0f, float rz = 0.0f,
-		float sx = 1.0f, float sy = 1.0f, float sz = 1.0f)
-	{
-		position = { x,y,z };
-		rotation = { rx,ry,rz };
-		scale = { sx,sy,sz };
-	}
+	DirectX::XMFLOAT3 position = { 0.0f, 0.0f, 0.0f };
+	DirectX::XMFLOAT3 rotation = { 0.0f, 0.0f, 0.0f };
+	DirectX::XMFLOAT3 scale = { 1.0f, 1.0f, 1.0f };
 };
-#endif //TRANSFORMCOMPONENT_H

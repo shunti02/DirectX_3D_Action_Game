@@ -4,13 +4,8 @@
 =====================================================================*/
 #pragma once
 
-#include "ECS/ECS.h"
-
 struct RecoveryBoxComponent {
-	EntityID ownerID;// ’N‚ª•ú‚Á‚½‰ñ•œ‚©
-	int healAmount;// ‰ñ•œ—Ê
-	float lifeTime;// ¶‘¶ŠÔ
-
-	RecoveryBoxComponent(EntityID owner = ECSConfig::INVALID_ID, int heal = 10, float time = 0.5f)
-		:ownerID(owner), healAmount(heal), lifeTime(time){ }
+    int ownerID = -1;
+    int healAmount = 0;
+    float lifeTime = 0.5f;
 };

@@ -6,10 +6,7 @@
 
 #include "ECS/ECS.h"
 struct AttackBoxComponent {
-	EntityID ownerID;// ’N‚ª•ú‚Á‚½UŒ‚‚©
-	int damage;// UŒ‚—Í
-	float lifeTime; // ¶‘¶ŠÔ
-
-	AttackBoxComponent(EntityID owner = ECSConfig::INVALID_ID, int damage = 1, float time = 0.2f)
-		:ownerID(owner), damage(damage), lifeTime(time){ }
+        int ownerID = -1;
+        int damage = 0;
+        float lifeTime = 0.5f;
 };

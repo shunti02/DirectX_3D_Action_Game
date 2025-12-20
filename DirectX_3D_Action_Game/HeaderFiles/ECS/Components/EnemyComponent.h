@@ -3,11 +3,17 @@
 //ŠT—v:“G‚Ìƒpƒ‰ƒ[ƒ^i‘¬“x‚âõ“G”ÍˆÍ‚È‚Çj
 =====================================================================*/
 #pragma once
-
+// “G‚Ìó‘Ô’è‹`
+enum class EnemyState {
+	Chase,      // ’ÇÕ
+	Attack,     // UŒ‚’†
+	Cooldown    // UŒ‚Œã‚Ìd’¼
+};
 struct EnemyComponent {
-	float moveSpeed;       // ˆÚ“®‘¬“x
-	float stopDistance;  // ’â~‹——£
-
-	EnemyComponent(float speed = 2.0f, float stopDist = 1.2f)
-		:moveSpeed(speed), stopDistance(stopDist){ }
+    float moveSpeed = 3.0f;
+    float attackRange = 2.5f;
+    float attackTimer = 0.0f;
+    float attackDuration = 0.5f;
+    float cooldownTime = 2.0f;
+    EnemyState state = EnemyState::Chase;
 };
