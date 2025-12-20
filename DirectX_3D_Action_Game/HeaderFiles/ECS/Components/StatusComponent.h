@@ -5,20 +5,11 @@
 #pragma once
 
 struct StatusComponent {
-	int hp;
-	int maxHp;
-	int attackPower;
-	float invincibleTimer;
+	int hp = 100;
+	int maxHp = 100;
+	int attackPower = 10;
+	float invincibleTimer = 0.0f; // 無敵時間
 
-	//コンストラクタ
-	StatusComponent(int _hp = 10, int _atk = 1)
-		:hp(_hp), maxHp(_hp), attackPower(_atk), invincibleTimer(0.0f){ }
-	//ダメージを受ける関数
-	void TakeDamage(int damage) {
-		hp -= damage;
-		if (hp < 0)hp = 0;
-	}
-
-	//生きているか
-	bool IsDead()const { return hp <= 0; }
+	bool IsDead() const { return hp <= 0; }
+	void TakeDamage(int damage) { hp -= damage; if (hp < 0) hp = 0; }
 };

@@ -12,23 +12,21 @@ enum class ColliderType {
 };
 
 struct ColliderComponent {
-    ColliderType type;
+    ColliderType type = ColliderType::Type_Box;
 
     // 共通データ
-    DirectX::XMFLOAT3 center; // オフセット（モデル中心からのズレ）
+    DirectX::XMFLOAT3 center = { 0.0f, 0.0f, 0.0f }; // オフセット
 
     // Box用データ
-    DirectX::XMFLOAT3 size;   // 幅・高さ・奥行き
+    DirectX::XMFLOAT3 size = { 1.0f, 1.0f, 1.0f };   // 幅・高さ・奥行き
 
     // Capsule/Sphere用データ
-    float radius;
-    float height; // Capsuleのみ使用
+    float radius = 0.5f;
+    float height = 1.0f; // Capsuleのみ使用
 
-    // コンストラクタ（デフォルトはBOX）
-    ColliderComponent()
-        : type(ColliderType::Type_Box), center(0, 0, 0), size(1, 1, 1), radius(0.5f), height(1.0f) {}
+    // ★コンストラクタは削除しました
 
-    // 初期化用ヘルパー
+    // 初期化用ヘルパー関数はあってもOKです
     void SetBox(float width, float h, float depth) {
         type = ColliderType::Type_Box;
         size = { width, h, depth };
@@ -38,5 +36,10 @@ struct ColliderComponent {
         type = ColliderType::Type_Capsule;
         radius = r;
         height = h;
+    }
+
+    void SetSphere(float r) {
+        type = ColliderType::Type_Sphere;
+        radius = r;
     }
 };

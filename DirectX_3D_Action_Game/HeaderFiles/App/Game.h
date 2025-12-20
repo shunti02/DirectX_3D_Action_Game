@@ -29,6 +29,8 @@ public:
     Graphics* GetGraphics() const { return pGraphics.get(); }
     Input* GetInput() const { return pInput.get(); }
 
+    SceneManager* GetSceneManager() const { return pSceneManager.get(); }
+
 private:
     static Game* instance; // シングルトンインスタンス
 
