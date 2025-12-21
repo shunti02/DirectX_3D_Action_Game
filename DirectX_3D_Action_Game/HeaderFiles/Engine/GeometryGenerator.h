@@ -17,11 +17,11 @@ struct MeshData {
 // å`èÛÇÃéÌóﬁ
 enum class ShapeType {
     CUBE,
-    CONE,
     CAPSULE,
     SPHERE,
     TETRAHEDRON,
-    PLANE
+    TORUS,
+    DOUBLE_PYRAMID
 };
 
 class GeometryGenerator {
@@ -35,4 +35,6 @@ public:
     static MeshData CreateCapsule(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color);
     static MeshData CreateSphere(float radius, int sliceCount, int stackCount, DirectX::XMFLOAT4 color);
     static MeshData CreateTetrahedron(float size, DirectX::XMFLOAT4 color);
+    static MeshData CreateTorus(float radius, float tubeRadius, int radialSegments, int tubularSegments, DirectX::XMFLOAT4 color);
+    static MeshData CreateDoublePyramid(float size, float height, DirectX::XMFLOAT4 color);
 };

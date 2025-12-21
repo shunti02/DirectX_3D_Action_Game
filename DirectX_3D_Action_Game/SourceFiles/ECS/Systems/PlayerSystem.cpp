@@ -1,12 +1,32 @@
-#include "ECS/Systems/PlayerSystem.h" // パスは環境に合わせて調整してください
-
+/*===================================================================
+// ファイル: PlayerSystem.cpp
+// 概要: プレイヤーの入力・移動・交代制御
+=====================================================================*/
+#include "ECS/Systems/PlayerSystem.h"
 #include "ECS/World.h"
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/PlayerComponent.h"
 #include "ECS/Components/CameraComponent.h"
 #include "ECS/Components/StatusComponent.h"
 #include "App/Game.h"
+#include "App/Main.h"
+#include <cmath>
+#include <algorithm>
+#include <cstdio> // printf用
 
+using namespace DirectX;
+
+// 線形補間
+static float Lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+// 待機場所 (画面外)
+static const float STANDBY_Y = -50.0f;
+
+// ---------------------------------------------------------
+// Update
+// ---------------------------------------------------------
 void PlayerSystem::Update(float dt) {
     auto registry = pWorld->GetRegistry();
     Input* input = Game::GetInstance()->GetInput();
@@ -22,7 +42,16 @@ void PlayerSystem::Update(float dt) {
         tabKeyPressed = false;
     }
 
-    // --- プレイヤー制御 ---
+    // カメラ角度取得
+    float cameraYaw = 0.0f;
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (registry->HasComponent<CameraComponent>(id)) {
+            cameraYaw = registry->GetComponent<CameraComponent>(id).angleY;
+            break;
+        }
+    }
+
+    // --- プレイヤー制御ループ ---
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (!registry->HasComponent<PlayerComponent>(id)) continue;
 
@@ -31,74 +60,125 @@ void PlayerSystem::Update(float dt) {
 
         bool isDead = false;
         if (registry->HasComponent<StatusComponent>(id)) {
-            if (registry->GetComponent<StatusComponent>(id).hp <= 0) {
-                isDead = true;
-            }
+            if (registry->GetComponent<StatusComponent>(id).hp <= 0) isDead = true;
         }
 
-        // ---------------------------------------------------------
-        // 1. 移動入力 (X, Z軸の速度設定)
-        // ---------------------------------------------------------
+        // =========================================================
+        // A. アクティブなキャラ (操作中)
+        // =========================================================
         if (player.isActive && !isDead) {
-            player.velocity.x = 0.0f;
-            player.velocity.z = 0.0f;
+            // 接地中は操作可能
+            if (player.isGrounded) {
+                float inputX = 0.0f;
+                float inputZ = 0.0f;
+                if (input->IsKey('W')) inputZ += 1.0f;
+                if (input->IsKey('S')) inputZ -= 1.0f;
+                if (input->IsKey('A')) inputX -= 1.0f;
+                if (input->IsKey('D')) inputX += 1.0f;
 
-            if (input->IsKey('W')) player.velocity.z = player.moveSpeed;
-            if (input->IsKey('S')) player.velocity.z = -player.moveSpeed;
-            if (input->IsKey('A')) player.velocity.x = -player.moveSpeed;
-            if (input->IsKey('D')) player.velocity.x = player.moveSpeed;
+                if (inputX != 0.0f || inputZ != 0.0f) {
+                    float length = std::sqrt(inputX * inputX + inputZ * inputZ);
+                    if (length > 0.0f) { inputX /= length; inputZ /= length; }
 
-            // ---------------------------------------------------------
-            // 2. ジャンプ (接地している時だけ)
-            // ---------------------------------------------------------
-            if (input->IsKeyDown(VK_SPACE) && player.isGrounded) {
-                player.velocity.y = player.jumpPower; // 上方向へドーン！
-                player.isGrounded = false; // 空中に飛び出したのでfalse
+                    float sinY = sinf(cameraYaw);
+                    float cosY = cosf(cameraYaw);
+                    float moveX = inputX * cosY + inputZ * sinY;
+                    float moveZ = inputZ * cosY - inputX * sinY;
+
+                    player.velocity.x = moveX * player.moveSpeed;
+                    player.velocity.z = moveZ * player.moveSpeed;
+                    trans.rotation.y = atan2f(player.velocity.x, player.velocity.z);
+                }
+                else {
+                    player.velocity.x = 0.0f;
+                    player.velocity.z = 0.0f;
+                }
+
+                if (input->IsKeyDown(VK_SPACE)) {
+                    player.velocity.y = player.jumpPower;
+                    player.isGrounded = false;
+                }
+            }
+            else {
+                // 空中制御 (少しだけ)
+                float drag = 2.0f * dt;
+                player.velocity.x = Lerp(player.velocity.x, 0.0f, drag);
+                player.velocity.z = Lerp(player.velocity.z, 0.0f, drag);
+
+                // 空中移動 (Air Control)
+                float speedSq = player.velocity.x * player.velocity.x + player.velocity.z * player.velocity.z;
+                if (speedSq < (player.moveSpeed * player.moveSpeed) + 5.0f) {
+                    float inputX = 0.0f; float inputZ = 0.0f;
+                    if (input->IsKey('W')) inputZ += 1.0f;
+                    if (input->IsKey('S')) inputZ -= 1.0f;
+                    if (input->IsKey('A')) inputX -= 1.0f;
+                    if (input->IsKey('D')) inputX += 1.0f;
+
+                    if (inputX != 0.0f || inputZ != 0.0f) {
+                        float length = std::sqrt(inputX * inputX + inputZ * inputZ);
+                        if (length > 0.0f) { inputX /= length; inputZ /= length; }
+                        float sinY = sinf(cameraYaw); float cosY = cosf(cameraYaw);
+                        float moveX = inputX * cosY + inputZ * sinY;
+                        float moveZ = inputZ * cosY - inputX * sinY;
+
+                        float airAccel = 10.0f * dt;
+                        player.velocity.x += moveX * airAccel;
+                        player.velocity.z += moveZ * airAccel;
+                        trans.rotation.y = atan2f(moveX, moveZ);
+                    }
+                }
             }
         }
+        // =========================================================
+        // B. 非アクティブなキャラ (交代中 or 待機中)
+        // =========================================================
         else {
-            // 操作してないキャラは停止
-            player.velocity.x = 0.0f;
-            player.velocity.z = 0.0f;
+            // 待機場所にいるなら固定
+            if (trans.position.y <= STANDBY_Y + 5.0f) {
+                player.velocity = { 0.0f, 0.0f, 0.0f };
+                trans.position.y = STANDBY_Y;
+            }
+            // 地上付近なら、そのまま物理挙動で飛ばす (着地したら回収)
+            else {
+                if (player.isGrounded) {
+                    trans.position.y = STANDBY_Y;
+                    player.velocity = { 0.0f, 0.0f, 0.0f };
+                }
+            }
 
+            // 死んだら強制交代
             if (player.isActive && isDead) {
                 SwitchCharacter(registry);
             }
         }
 
-        // ---------------------------------------------------------
-        // 3. 重力加算 (Y軸の速度変化)
-        // ---------------------------------------------------------
-        // 常に下へ引っ張る
-        player.velocity.y -= player.gravity * dt;
+        // 共通: 重力と反映
+        if (trans.position.y > STANDBY_Y + 1.0f) {
+            player.velocity.y -= player.gravity * dt;
+        }
 
-        // ---------------------------------------------------------
-        // 4. 速度を位置に反映 (積分)
-        // ---------------------------------------------------------
         trans.position.x += player.velocity.x * dt;
         trans.position.y += player.velocity.y * dt;
         trans.position.z += player.velocity.z * dt;
 
-        // 毎フレーム「今は空中にいる」と仮定してリセットする
-        // (PhysicsSystemでの接地判定実装待ち)
-        player.isGrounded = false;
+        player.isGrounded = false; // PhysicsSystemで更新される
 
-        // 安全策: 地面より下（奈落）に落ちたらリセット
-        if (trans.position.y < -10.0f) {
-            // 死んでいないなら復帰、死んでるならそのまま
-            if (!isDead) {
-                trans.position = { 0.0f, 5.0f, 0.0f };
-                player.velocity = { 0.0f, 0.0f, 0.0f };
-            }
+        // 奈落リセット
+        if (trans.position.y < STANDBY_Y - 20.0f) {
+            trans.position.y = STANDBY_Y;
+            player.velocity = { 0.0f, 0.0f, 0.0f };
         }
     }
 }
 
+// ---------------------------------------------------------
+// SwitchCharacter (交代演出ロジック)
+// ---------------------------------------------------------
 void PlayerSystem::SwitchCharacter(Registry* registry) {
-    EntityID nextActiveID = ECSConfig::INVALID_ID;
-
-    // 現在操作中のキャラを探す
+    EntityID nextID = ECSConfig::INVALID_ID;
     EntityID currentID = ECSConfig::INVALID_ID;
+
+    // 現在のキャラ取得
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (registry->HasComponent<PlayerComponent>(id)) {
             if (registry->GetComponent<PlayerComponent>(id).isActive) {
@@ -108,37 +188,62 @@ void PlayerSystem::SwitchCharacter(Registry* registry) {
         }
     }
 
-    // 次の操作候補を探す (生存しているキャラを優先)
+    // 次のキャラ取得
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (id == currentID) continue; // 自分以外
+        if (id == currentID) continue;
         if (!registry->HasComponent<PlayerComponent>(id)) continue;
 
-        // 生存チェック
         bool isAlive = true;
         if (registry->HasComponent<StatusComponent>(id)) {
             if (registry->GetComponent<StatusComponent>(id).hp <= 0) isAlive = false;
         }
-
         if (isAlive) {
-            nextActiveID = id;
+            nextID = id;
             break;
         }
     }
 
-    // 交代可能なキャラが見つかった場合のみ交代
-    if (nextActiveID != ECSConfig::INVALID_ID) {
-        if (currentID != ECSConfig::INVALID_ID) {
-            registry->GetComponent<PlayerComponent>(currentID).isActive = false;
-        }
-        registry->GetComponent<PlayerComponent>(nextActiveID).isActive = true;
+    // 交代実行
+    if (nextID != ECSConfig::INVALID_ID && currentID != ECSConfig::INVALID_ID) {
+        auto& currentP = registry->GetComponent<PlayerComponent>(currentID);
+        auto& currentT = registry->GetComponent<TransformComponent>(currentID);
+        auto& nextP = registry->GetComponent<PlayerComponent>(nextID);
+        auto& nextT = registry->GetComponent<TransformComponent>(nextID);
 
-        // カメラターゲット更新
+        // 1. 退出 (大ジャンプ)
+        currentP.isActive = false;
+        currentP.isGrounded = false;
+
+        float rotY = currentT.rotation.y;
+        float jumpOutSpeed = 10.0f;
+        currentP.velocity.x = sinf(rotY) * jumpOutSpeed;
+        currentP.velocity.z = cosf(rotY) * jumpOutSpeed;
+        currentP.velocity.y = 15.0f; // 上へ
+
+        // 2. 登場 (上空から)
+        nextP.isActive = true;
+        nextP.isGrounded = false;
+
+        float spawnHeight = 15.0f;
+        float spawnBehind = -3.0f;
+
+        nextT.position.x = currentT.position.x + sinf(rotY) * spawnBehind;
+        nextT.position.z = currentT.position.z + cosf(rotY) * spawnBehind;
+        nextT.position.y = currentT.position.y + spawnHeight;
+        nextT.rotation.y = currentT.rotation.y;
+
+        nextP.velocity.x = 0.0f;
+        nextP.velocity.z = 0.0f;
+        nextP.velocity.y = -20.0f; // 急降下
+
+        // 3. カメラ切り替え
         for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
             if (registry->HasComponent<CameraComponent>(id)) {
                 auto& cam = registry->GetComponent<CameraComponent>(id);
-                cam.targetEntityID = nextActiveID;
+                cam.targetEntityID = nextID;
                 break;
             }
         }
+        DebugLog("Switched! P%d(Exit) -> P%d(Enter)", currentID, nextID);
     }
 }

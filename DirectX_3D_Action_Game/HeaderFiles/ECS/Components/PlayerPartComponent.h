@@ -3,11 +3,17 @@
 
 enum class PartType {
     Head,
+	EarLeft,
+	EarRight,
     Body,
+	ShoulderLeft,
+	ShoulderRight,
     ArmLeft,
     ArmRight,
     HandLeft,
-    HandRight
+    HandRight,
+	LegLeft,
+    LegRight
 };
 
 struct PlayerPartComponent {

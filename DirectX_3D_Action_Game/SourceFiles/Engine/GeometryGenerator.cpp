@@ -12,14 +12,16 @@ MeshData GeometryGenerator::CreateMesh(ShapeType type, DirectX::XMFLOAT4 color) 
     switch (type) {
     case ShapeType::CUBE:
         return CreateCube(1.0f, color);
-    case ShapeType::CONE:
-        return CreateCone(0.5f, 1.0f, 20, color);
     case ShapeType::CAPSULE:
         return CreateCapsule(0.5f, 2.0f, 20, color);
     case ShapeType::SPHERE:
         return CreateSphere(0.5f, 16, 16, color);
     case ShapeType::TETRAHEDRON:
         return CreateTetrahedron(1.0f, color);
+    case ShapeType::TORUS:
+        return CreateTorus(0.8f, 0.2f, 20, 16, color);
+    case ShapeType::DOUBLE_PYRAMID:
+        return CreateDoublePyramid(1.0f, 2.0f, color);
     default:
         return CreateCube(1.0f, color);
     }
@@ -249,6 +251,7 @@ MeshData GeometryGenerator::CreateSphere(float radius, int sliceCount, int stack
 
     return mesh;
 }
+// 正四面体作成
 MeshData GeometryGenerator::CreateTetrahedron(float size, DirectX::XMFLOAT4 color) {
     MeshData mesh;
     float s = size; // スケール
@@ -280,6 +283,77 @@ MeshData GeometryGenerator::CreateTetrahedron(float size, DirectX::XMFLOAT4 colo
         0, 1, 3, // 左面
         0, 3, 2, // 裏面
         1, 2, 3  // 底面
+    };
+
+    return mesh;
+}
+// トーラス作成
+MeshData GeometryGenerator::CreateTorus(float radius, float tubeRadius, int radialSegments, int tubularSegments, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+
+    for (int i = 0; i <= radialSegments; i++) {
+        float theta = XM_2PI * (float)i / radialSegments;
+        float cosTheta = cosf(theta);
+        float sinTheta = sinf(theta);
+
+        for (int j = 0; j <= tubularSegments; j++) {
+            float phi = XM_2PI * (float)j / tubularSegments;
+            float cosPhi = cosf(phi);
+            float sinPhi = sinf(phi);
+
+            // XZ平面に広がるリングとし、Y軸方向を厚みとする
+            float centerX = radius * cosTheta;
+            float centerZ = radius * sinTheta;
+
+            // チューブの断面計算
+            float x = (radius + tubeRadius * cosPhi) * cosTheta;
+            float z = (radius + tubeRadius * cosPhi) * sinTheta;
+            float y = tubeRadius * sinPhi;
+
+            mesh.vertices.push_back({ x, y, z, color.x, color.y, color.z, color.w });
+        }
+    }
+
+    for (int i = 0; i < radialSegments; i++) {
+        for (int j = 0; j < tubularSegments; j++) {
+            int current = i * (tubularSegments + 1) + j;
+            int next = (i + 1) * (tubularSegments + 1) + j;
+
+            mesh.indices.push_back(current);
+            mesh.indices.push_back(next);
+            mesh.indices.push_back(current + 1);
+
+            mesh.indices.push_back(current + 1);
+            mesh.indices.push_back(next);
+            mesh.indices.push_back(next + 1);
+        }
+    }
+
+    return mesh;
+}
+// 二重ピラミッド作成
+MeshData GeometryGenerator::CreateDoublePyramid(float size, float height, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+    float h = height * 0.5f;
+    float s = size * 0.5f;
+
+    // 頂点
+    // 0: Top, 1: Bottom, 2-5: Center Ring
+    mesh.vertices = {
+        { 0.0f,  h, 0.0f, color.x, color.y, color.z, color.w }, // 0: Top
+        { 0.0f, -h, 0.0f, color.x, color.y, color.z, color.w }, // 1: Bottom
+        {   s, 0.0f,   s, color.x, color.y, color.z, color.w }, // 2: RF
+        {   s, 0.0f,  -s, color.x, color.y, color.z, color.w }, // 3: RB
+        {  -s, 0.0f,  -s, color.x, color.y, color.z, color.w }, // 4: LB
+        {  -s, 0.0f,   s, color.x, color.y, color.z, color.w }  // 5: LF
+    };
+
+    // インデックス (上のピラミッド + 下のピラミッド)
+    mesh.indices = {
+        // Top
+        0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 2,
+        // Bottom
+        1, 3, 2,  1, 4, 3,  1, 5, 4,  1, 2, 5
     };
 
     return mesh;

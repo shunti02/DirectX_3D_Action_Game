@@ -2,6 +2,7 @@
 // ファイル: UISystem.cpp
 // 概要: ImGuiを使用してプレイヤーや敵のHPを可視化する
 =====================================================================*/
+#define NOMINMAX
 #include "ECS/Systems/UISystem.h"
 #include "ECS/World.h"
 #include "ECS/Components/StatusComponent.h"
@@ -9,12 +10,15 @@
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/RolesComponent.h"
 #include "../../../ImGui/imgui.h"
+#include "App/Main.h"
 #include <format>
 #include <string>
 
 void UISystem::Update(float dt) {
     auto registry = pWorld->GetRegistry();
-
+    // -----------------------------------------------------
+    // 1. ステータスモニター
+    // -----------------------------------------------------
     // ImGuiウィンドウの開始
     ImGui::Begin("Game Status Monitor");
 
@@ -81,4 +85,33 @@ void UISystem::Update(float dt) {
     }
 
     ImGui::End();
+
+    // -----------------------------------------------------
+    // 2. ★追加: デバッグログウィンドウ
+    // -----------------------------------------------------
+    ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Debug Log");
+
+    if (ImGui::Button("Clear Log")) {
+        AppLog::Clear();
+    }
+    ImGui::SameLine();
+    ImGui::Text("History: %d", AppLog::logs.size());
+
+    ImGui::Separator();
+
+    // スクロール領域
+    ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+    for (const auto& log : AppLog::logs) {
+        ImGui::TextUnformatted(log.c_str());
+    }
+
+    // 常に最新（一番下）を表示する
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+        ImGui::SetScrollHereY(1.0f);
+    }
+
+    ImGui::EndChild();
+    ImGui::End(); // Debug Log 終了
 }
