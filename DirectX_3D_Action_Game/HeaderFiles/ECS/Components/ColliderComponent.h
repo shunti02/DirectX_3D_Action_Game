@@ -6,6 +6,7 @@
 #include <DirectXMath.h>
 
 enum class ColliderType {
+    Type_None,
     Type_Box,       // 立方体 (AABB)
     Type_Capsule,   // カプセル
     Type_Sphere     // 球
@@ -23,8 +24,6 @@ struct ColliderComponent {
     // Capsule/Sphere用データ
     float radius = 0.5f;
     float height = 1.0f; // Capsuleのみ使用
-
-    // ★コンストラクタは削除しました
 
     // 初期化用ヘルパー関数はあってもOKです
     void SetBox(float width, float h, float depth) {

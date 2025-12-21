@@ -51,7 +51,7 @@ void GameScene::Initialize() {
     EntityID player1 = EntityFactory::CreateEntity(pWorld.get(), {
         .type = "Player",
         .position = { 0.0f, 0.0f, 0.0f },
-        .scale = { 1.0f, 1.0f, 1.0f },
+        .scale = { 0.5f, 0.5f, 0.5f },
         .color = Colors::Blue,
         .role = PlayerRole::Attacker
         });
@@ -62,7 +62,7 @@ void GameScene::Initialize() {
     EntityFactory::CreateEntity(pWorld.get(), {
         .type = "Player",
         .position = { 2.0f, 0.0f, 0.0f },
-        .scale = { 1.0f, 1.0f, 1.0f },
+        .scale = { 0.5f, 0.5f, 0.5f },
         .color = Colors::Green,
         .role = PlayerRole::Healer
         });

@@ -10,6 +10,7 @@
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/StatusComponent.h"
 #include "Game/EntityFactory.h"
+#include "App/Main.h"
 #include <DirectXMath.h>
 #include <vector>
 #include <cmath>
@@ -47,6 +48,8 @@ void EnemySystem::Update(float dt) {
             if (registry->HasComponent<StatusComponent>(pID)) {
                 if (registry->GetComponent<StatusComponent>(pID).hp <= 0) continue;
             }
+            auto& pComp = registry->GetComponent<PlayerComponent>(pID);
+            if (!pComp.isActive) continue;
 
             auto& pTrans = registry->GetComponent<TransformComponent>(pID);
             XMVECTOR pPos = XMLoadFloat3(&pTrans.position);
@@ -78,6 +81,9 @@ void EnemySystem::Update(float dt) {
             if (dist <= enemy.attackRange) {
                 enemy.state = EnemyState::Attack;
                 enemy.attackTimer = enemy.attackDuration;
+
+                // ★追加: 攻撃開始ログ
+                DebugLog("Enemy(%d): Attack Start! Target:%d", id, targetID);
 
                 // 攻撃発生！（AttackBox生成）
                 // 敵の前方に判定を出す
@@ -117,7 +123,7 @@ void EnemySystem::Update(float dt) {
             break;
         }
 
-                              // --- [攻撃状態] ---
+         // --- [攻撃状態] ---
         case EnemyState::Attack: {
             // 立ち止まって硬直
             enemy.attackTimer -= dt;
@@ -125,17 +131,21 @@ void EnemySystem::Update(float dt) {
                 // 攻撃終了 -> クールダウンへ
                 enemy.state = EnemyState::Cooldown;
                 enemy.attackTimer = enemy.cooldownTime;
+                // ★追加: 攻撃終了ログ
+                DebugLog("Enemy(%d): Attack End -> Cooldown", id);
             }
             break;
         }
 
-                               // --- [クールダウン状態] ---
+        // --- [クールダウン状態] ---
         case EnemyState::Cooldown: {
             // 棒立ち、または少し後退するなど
             enemy.attackTimer -= dt;
             if (enemy.attackTimer <= 0.0f) {
                 // 復帰 -> 再び追跡へ
                 enemy.state = EnemyState::Chase;
+                // ★追加: 復帰ログ
+                DebugLog("Enemy(%d): Cooldown End -> Chase", id);
             }
             break;
         }

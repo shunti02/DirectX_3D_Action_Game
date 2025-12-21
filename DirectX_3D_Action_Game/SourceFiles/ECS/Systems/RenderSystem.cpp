@@ -85,6 +85,10 @@ void RenderSystem::Init(World* world) {
 
 	MeshData capData = GeometryGenerator::CreateMesh(ShapeType::CAPSULE, Colors::Red);
 	CreateDebugMesh(capData, debugMeshCapsule);
+
+	// ★追加: SPHERE (球)
+	MeshData sphereData = GeometryGenerator::CreateMesh(ShapeType::SPHERE, Colors::Red);
+	CreateDebugMesh(sphereData, debugMeshSphere);
 }
 
 void RenderSystem::Update(float dt) {
@@ -186,41 +190,54 @@ void RenderSystem::Draw() {
 			auto& trans = registry->GetComponent<TransformComponent>(id);
 
 
-			XMMATRIX world = XMMatrixIdentity();
+			if (col.type == ColliderType::Type_None) continue;
 
+			XMMATRIX world = XMMatrixIdentity();
+			MeshComponent* pDebugMesh = nullptr;
+
+			// ★修正: コライダータイプごとのサイズ計算とメッシュ選択
 			if (col.type == ColliderType::Type_Box) {
 				world *= XMMatrixScaling(
 					col.size.x * trans.scale.x,
 					col.size.y * trans.scale.y,
 					col.size.z * trans.scale.z
 				);
+				pDebugMesh = &debugMeshBox;
+			}
+			else if (col.type == ColliderType::Type_Sphere) {
+				// 1. 本来あるべき半径を計算
+				float trueRadius = col.radius * trans.scale.x;
+
+				// 2. メッシュ(半径0.5)に合わせて倍率を補正
+				float scaleFactor = trueRadius * 2.0f;
+
+				// 3. 適用
+				world *= XMMatrixScaling(scaleFactor, scaleFactor, scaleFactor);
+				pDebugMesh = &debugMeshSphere;
 			}
 			else if (col.type == ColliderType::Type_Capsule) {
+				// カプセルの場合
 				float sR = (col.radius * trans.scale.x) / 0.5f;
 				float sH = (col.height * trans.scale.y) / 2.0f;
 				world *= XMMatrixScaling(sR, sH, sR);
+				pDebugMesh = &debugMeshCapsule;
 			}
 
-			XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z);
-			XMMATRIX T = XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
-			world *= R * T;
+			if (pDebugMesh != nullptr) {
+				XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z);
+				XMMATRIX T = XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
+				world *= R * T;
 
+				XMMATRIX wvp = world * viewProj;
+				UpdateConstantBuffer(context, wvp);
 
-			XMMATRIX wvp = world * viewProj;
-			UpdateConstantBuffer(context, wvp);
-
-
-			MeshComponent* pDebugMesh = (col.type == ColliderType::Type_Box)
-				? &debugMeshBox
-				: &debugMeshCapsule;
-
-			UINT stride = sizeof(Vertex);
-			UINT offset = 0;
-			context->IASetVertexBuffers(0, 1, pDebugMesh->pVertexBuffer.GetAddressOf(), &stride, &offset);
-			context->IASetIndexBuffer(pDebugMesh->pIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
-			context->DrawIndexed(pDebugMesh->indexCount, 0, 0);
+				UINT stride = sizeof(Vertex);
+				UINT offset = 0;
+				context->IASetVertexBuffers(0, 1, pDebugMesh->pVertexBuffer.GetAddressOf(), &stride, &offset);
+				context->IASetIndexBuffer(pDebugMesh->pIndexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
+				context->DrawIndexed(pDebugMesh->indexCount, 0, 0);
+			}
 		}
-
 
 		if (pSolidState) context->RSSetState(pSolidState.Get());
 	}

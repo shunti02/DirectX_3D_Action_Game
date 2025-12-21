@@ -6,16 +6,19 @@
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/ColliderComponent.h"
 #include "ECS/Components/PlayerComponent.h"
+#include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/AttackBoxComponent.h"
 #include "ECS/Components/RecoveryBoxComponent.h"
 #include "ECS/Components/AttackSphereComponent.h"
 #include "ECS/Components/RecoverySphereComponent.h"
 #include "ECS/Components/RolesComponent.h"
 #include "ECS/Components/StatusComponent.h"
+#include "ECS/Components/PlayerPartComponent.h"
 #include <vector>
 #include <cmath>
 #include <algorithm> // std::max, std::min
 #include <DirectXMath.h>
+#include <DirectXCollision.h>
 
 using namespace DirectX;
 
@@ -97,7 +100,11 @@ OBB PhysicsSystem::GetOBB(EntityID id) {
 
     const auto& trans = registry->GetComponent<TransformComponent>(id);
     const auto& col = registry->GetComponent<ColliderComponent>(id);
-
+    //Type_None ならサイズ0のOBBを返して終わる
+    if (col.type == ColliderType::Type_None) {
+        obb.extents = { 0,0,0 };
+        return obb;
+    }
 	//行列計算
     XMMATRIX R = XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z);
     XMMATRIX T = XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
@@ -115,15 +122,81 @@ OBB PhysicsSystem::GetOBB(EntityID id) {
             col.size.z * trans.scale.z * 0.5f
         };
     }
+    else if (col.type == ColliderType::Type_Sphere) {
+        // ★追加: 球体の場合 (半径をXYZすべてのExtentに適用して立方体扱いとする、または球として扱う)
+        // OBBとして近似する場合は、半径を各軸のハーフサイズとします
+        float scaledRadius = col.radius * trans.scale.x; // 一律Xスケール依存とする
+        obb.extents = { scaledRadius, scaledRadius, scaledRadius };
+    }
     else {
-        // カプセルの場合 (半径はXスケール、高さはYスケールに依存とみなす)
+        // カプセルの場合 (BoxでもSphereでもないならCapsuleとみなす)
         float scaledRadius = col.radius * trans.scale.x;
         float scaledHeight = col.height * trans.scale.y;
         obb.extents = { scaledRadius, scaledHeight * 0.5f, scaledRadius };
     }
-
     return obb;
 }
+
+// -----------------------------------------------------------------------
+// ★追加: レイキャストによる地面判定
+// -----------------------------------------------------------------------
+// 戻り値: ヒットしたかどうか (true/false)
+// outDist: ヒットした場合の距離
+static bool RaycastGround(World* world, XMVECTOR origin, float maxDist, float& outDist) {
+    auto registry = world->GetRegistry();
+    float closestDist = maxDist;
+    bool hitAny = false;
+
+    XMVECTOR dirDown = XMVectorSet(0, -1, 0, 0); // 真下
+
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        // 地面(Ground)とみなせるものだけ判定
+        // ここではColliderがあり、かつPlayer/Enemy/AttackBox等でないものを地面とみなす
+        // (厳密にやるなら TagComponent で "Ground" をつけるのがベストですが、簡易判定)
+        if (!registry->HasComponent<ColliderComponent>(id)) continue;
+        if (!registry->HasComponent<TransformComponent>(id)) continue;
+
+        // 除外対象
+        if (registry->HasComponent<PlayerComponent>(id)) continue;
+        if (registry->HasComponent<EnemyComponent>(id)) continue;
+        if (registry->HasComponent<AttackBoxComponent>(id)) continue;
+        if (registry->HasComponent<RecoveryBoxComponent>(id)) continue;
+        if (registry->HasComponent<AttackSphereComponent>(id)) continue;
+        if (registry->HasComponent<RecoverySphereComponent>(id)) continue;
+        if (registry->HasComponent<PlayerPartComponent>(id)) continue;
+
+        // OBB取得 (PhysicsSystemクラスのメソッドをstaticヘルパー化するか、ここでも同様の計算を行う)
+        // ここでは簡易的にOBB計算を再実装（またはPhysicsSystem::GetOBBをpublic staticにして呼ぶ）
+        auto& trans = registry->GetComponent<TransformComponent>(id);
+        auto& col = registry->GetComponent<ColliderComponent>(id);
+        if (col.type == ColliderType::Type_None) continue;
+
+        // DirectX::BoundingOrientedBox を作成
+        BoundingOrientedBox obb;
+        obb.Center = trans.position;
+        obb.Extents = {
+            col.size.x * trans.scale.x * 0.5f,
+            col.size.y * trans.scale.y * 0.5f,
+            col.size.z * trans.scale.z * 0.5f
+        };
+        // 回転 (Quaternion)
+        XMVECTOR Q = XMQuaternionRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z);
+        XMStoreFloat4(&obb.Orientation, Q);
+
+        // レイ判定
+        float dist = 0.0f;
+        if (obb.Intersects(origin, dirDown, dist)) {
+            if (dist < closestDist) {
+                closestDist = dist;
+                hitAny = true;
+            }
+        }
+    }
+
+    outDist = closestDist;
+    return hitAny;
+}
+
 // -----------------------------------------------------------------------
 // Update関数の実装
 // -----------------------------------------------------------------------
@@ -140,20 +213,84 @@ void PhysicsSystem::Update(float dt) {
         }
     }
 
-    EntityID playerID = ECSConfig::INVALID_ID;
+    // ---------------------------------------------------------
+    // プレイヤーの物理挙動 (レイキャスト接地 + 横方向の押し出し)
+    // ---------------------------------------------------------
     for (EntityID playerID = 0; playerID < ECSConfig::MAX_ENTITIES; ++playerID) {
-        if (!registry->HasComponent<PlayerComponent>(playerID))continue;
-        if (!registry->HasComponent<ColliderComponent>(playerID))continue;
-        //接地フラグをリセット
-        auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
-        pComp.isGrounded = false;
+        if (!registry->HasComponent<PlayerComponent>(playerID)) continue;
+        if (!registry->HasComponent<ColliderComponent>(playerID)) continue;
 
+        auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
+        auto& pTrans = registry->GetComponent<TransformComponent>(playerID);
+
+        // 1. レイキャストで地面を探す
+        // コア(胴体中心)から足元までの理想の高さ
+        // EntityFactoryで bodyBaseY=0 にしたので、足先は -1.2f くらいにある
+        // 浮遊感を出したいので、地面からコアまでの高さを 2.0f (足の下に0.8f空く) くらいに設定
+        float hoverHeight = 2.0f;
+        float rayDist = 0.0f;
+
+        XMVECTOR rayOrigin = XMLoadFloat3(&pTrans.position);
+
+        // レイキャスト実行 (少し長めに探索: hoverHeight + 1.0f)
+        bool hitGround = RaycastGround(pWorld, rayOrigin, hoverHeight + 1.0f, rayDist);
+
+        if (hitGround && rayDist <= hoverHeight) {
+            // 接地している！
+            pComp.isGrounded = true;
+
+            // 高さを補正 (スナップ)
+            // 現在のY座標だと rayDist の位置に地面がある。
+            // 地面の位置 = currentY - rayDist
+            // 目標のY座標 = 地面の位置 + hoverHeight
+            float groundY = pTrans.position.y - rayDist;
+            float targetY = groundY + hoverHeight;
+
+            // 補間で滑らかに移動 (バネのような挙動)
+            // position.y = Lerp(position.y, targetY, 0.2f); // 簡易Lerp
+            // または直接代入してピタッと止める
+            pTrans.position.y = targetY;
+
+            // 落下速度リセット (ジャンプ中はリセットしないなどの制御が必要だが、
+            // ここでは「地面に近いなら接地」として処理)
+            if (pComp.velocity.y < 0) {
+                pComp.velocity.y = 0;
+            }
+        }
+        else {
+            // 空中
+            pComp.isGrounded = false;
+        }
+
+        // 2. 横方向の衝突判定 (壁など)
         for (EntityID otherID = 0; otherID < ECSConfig::MAX_ENTITIES; ++otherID) {
             if (playerID == otherID) continue;
             if (!registry->HasComponent<ColliderComponent>(otherID)) continue;
+
+            // 地面(Ground)とのOBB衝突判定は、Y軸をRaycastに任せたので無視したいが、
+            // 「壁」もGround扱いだとすり抜けてしまう。
+            // 簡易的に CheckAndResolve を呼ぶが、Y軸の押し出しをキャンセルするなどの工夫が必要。
+            // 今回は既存の CheckAndResolve をそのまま使い、壁ずりを機能させる。
+            // (ただし CheckAndResolve が上に押し上げてしまうとガタつく可能性あり)
+
             CheckAndResolve(playerID, otherID);
         }
     }
+
+    //EntityID playerID = ECSConfig::INVALID_ID;
+    //for (EntityID playerID = 0; playerID < ECSConfig::MAX_ENTITIES; ++playerID) {
+    //    if (!registry->HasComponent<PlayerComponent>(playerID))continue;
+    //    if (!registry->HasComponent<ColliderComponent>(playerID))continue;
+    //    //接地フラグをリセット
+    //    auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
+    //    pComp.isGrounded = false;
+
+    //    for (EntityID otherID = 0; otherID < ECSConfig::MAX_ENTITIES; ++otherID) {
+    //        if (playerID == otherID) continue;
+    //        if (!registry->HasComponent<ColliderComponent>(otherID)) continue;
+    //        CheckAndResolve(playerID, otherID);
+    //    }
+    //}
 
     // ---------------------------------------------------------
     // 攻撃判定のループ
@@ -249,6 +386,17 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
     if (registry->HasComponent<RecoveryBoxComponent>(otherID)) return;
     if (registry->HasComponent<AttackSphereComponent>(otherID)) return;
     if (registry->HasComponent<RecoverySphereComponent>(otherID)) return;
+
+    auto& otherCol = registry->GetComponent<ColliderComponent>(otherID);
+    if (otherCol.type == ColliderType::Type_None) return;
+
+    // ★重要追加2: 相手が「自分のパーツ」なら無視する (自己衝突防止)
+    if (registry->HasComponent<PlayerPartComponent>(otherID)) {
+        auto& part = registry->GetComponent<PlayerPartComponent>(otherID);
+        if (part.parentID == (int)playerID) {
+            return; // 自分の体の一部なので衝突しない
+        }
+    }
 
     auto& pTrans = registry->GetComponent<TransformComponent>(playerID);
     auto& pCol = registry->GetComponent<ColliderComponent>(playerID);
@@ -370,8 +518,6 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
 
     // --- 衝突解決 ---
     if (isHit) {
-        //衝突ログ
-        DebugLog("Hit Detected! Player vs Entity(%d)", otherID);
         // ---------------------------------------------------------
         // ★追加: ダメージ処理と消滅処理
         // ---------------------------------------------------------
@@ -397,12 +543,23 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
                     // プレイヤーを少し無敵にする
                     playerStatus.invincibleTimer = 1.0f;
 
-                    // ノックバック処理 (敵から離れる方向に弾く)
+                    // ★修正: ノックバック処理 (斜め後ろへ強く弾く)
                     XMVECTOR enemyPos = XMLoadFloat3(&boxOBB.center);
-                    XMVECTOR knockbackDir = XMVector3Normalize(pos - enemyPos);
-                    XMVECTOR knockbackVel = knockbackDir * 10.0f; // 弾く強さ
-                    knockbackVel = XMVectorSetY(knockbackVel, 5.0f); // 少し浮かせる
+                    XMVECTOR myPos = pos;
+
+                    // 敵から自分へのベクトル (水平成分のみ正規化して後退方向とする)
+                    XMVECTOR dir = myPos - enemyPos;
+                    dir = XMVectorSetY(dir, 0.0f); // Y成分を消す
+                    dir = XMVector3Normalize(dir);
+
+                    // 斜め上へ弾く (後退15, 上昇10)
+                    XMVECTOR knockbackVel = dir * 15.0f;
+                    knockbackVel = XMVectorSetY(knockbackVel, 10.0f);
+
                     XMStoreFloat3(&pComp.velocity, knockbackVel);
+
+                    // 接地フラグを強制解除 (空中に飛ばす)
+                    pComp.isGrounded = false;
                 }
             }
         }
@@ -436,6 +593,10 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
 // -----------------------------------------------------------------------
 void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
     auto registry = pWorld->GetRegistry();
+
+    if (registry->HasComponent<ColliderComponent>(targetID)) {
+        if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
+    }
 
     // 攻撃の持ち主を取得
     auto& attackBox = registry->GetComponent<AttackBoxComponent>(attackID);
@@ -482,21 +643,56 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
     if (distSq < radius * radius) {
         auto& targetStatus = registry->GetComponent<StatusComponent>(targetID);
 
-        //無敵時間チェック
         if (targetStatus.invincibleTimer <= 0.0f) {
-            auto& attackBox = registry->GetComponent<AttackBoxComponent>(attackID);
-
-            //ダメージ適用
             targetStatus.TakeDamage(attackBox.damage);
-            DebugLog("Attack Hit! Target(%d) HP: %d", targetID, targetStatus.hp);
-
-            //無敵時間ヒット
             targetStatus.invincibleTimer = 0.5f;
+            DebugLog("Hit! Target:%d Dmg:%d HP:%d", targetID, attackBox.damage, targetStatus.hp);
+            // ★修正: ノックバック処理
+            if (isTargetPlayer) {
+                auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
+                auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
 
-            //死亡判定
+                XMVECTOR enemyPos;
+                if (registry->HasComponent<TransformComponent>(ownerID)) {
+                    enemyPos = XMLoadFloat3(&registry->GetComponent<TransformComponent>(ownerID).position);
+                }
+                else {
+                    enemyPos = attackPos;
+                }
+                XMVECTOR targetPos = XMLoadFloat3(&pTrans.position);
+
+                // 敵 -> 自分 へのベクトル
+                XMVECTOR dir = targetPos - enemyPos;
+                dir = XMVectorSetY(dir, 0.0f);
+
+                // ★重なっている場合: プレイヤーの背中側へ飛ばす (Rotationを使って計算)
+                if (XMVectorGetX(XMVector3LengthSq(dir)) < 0.001f) {
+                    // プレイヤーの向きを取得して、その逆方向(後ろ)を計算
+                    XMMATRIX rotMat = XMMatrixRotationY(pTrans.rotation.y);
+                    // (0,0,-1) はローカルの後ろ。これを回転させてワールドの後ろにする
+                    dir = XMVector3TransformCoord(XMVectorSet(0, 0, -1.0f, 0), rotMat);
+                }
+                else {
+                    dir = XMVector3Normalize(dir);
+                }
+
+                // 斜め上へ弾く (後退15, 上昇10)
+                // ※この速度が次のPlayerSystemで消されないように、PlayerSystem側の修正が必須です
+                XMVECTOR knockbackVel = dir * 10.0f;
+                knockbackVel = XMVectorSetY(knockbackVel, 5.0f);
+
+                XMStoreFloat3(&pComp.velocity, knockbackVel);
+                pComp.isGrounded = false;
+            }
+
+            // 死亡判定
             if (targetStatus.IsDead()) {
                 DebugLog("Target(%d) Defeated!", targetID);
-                pWorld->DestroyEntity(targetID);
+
+                // ★修正: プレイヤーなら削除しない (Deadアニメーションのため)
+                if (!isTargetPlayer) {
+                    pWorld->DestroyEntity(targetID);
+                }
             }
         }
     }
@@ -506,6 +702,11 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
 // 回復判定の実装 (CheckRecoveryHit)
 void PhysicsSystem::CheckRecoveryHit(EntityID recoveryID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
+
+    // ★追加: 相手が Type_None なら判定しない
+    if (registry->HasComponent<ColliderComponent>(targetID)) {
+        if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
+    }
 
     // 回復判定（球とみなす）
     auto& rTrans = registry->GetComponent<TransformComponent>(recoveryID);
@@ -553,9 +754,15 @@ void PhysicsSystem::CheckRecoveryHit(EntityID recoveryID, EntityID targetID) {
 }
 void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
+
+    // ★追加: 相手が Type_None なら判定しない
+    if (registry->HasComponent<ColliderComponent>(targetID)) {
+        if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
+    }
+
     auto& sphere = registry->GetComponent<AttackSphereComponent>(attackID);
     auto& trans = registry->GetComponent<TransformComponent>(attackID);
-
+    EntityID ownerID = sphere.ownerID;
     // フレンドリーファイア防止
     bool isOwnerPlayer = registry->HasComponent<PlayerComponent>(sphere.ownerID);
     bool isTargetPlayer = registry->HasComponent<PlayerComponent>(targetID);
@@ -591,8 +798,42 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
             targetStatus.invincibleTimer = 0.5f;
             DebugLog("Sphere Hit! Target(%d)", targetID);
 
+            // ★修正: ノックバック処理
+            if (isTargetPlayer) {
+                auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
+                auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
+
+                XMVECTOR enemyPos;
+                if (registry->HasComponent<TransformComponent>(ownerID)) {
+                    enemyPos = XMLoadFloat3(&registry->GetComponent<TransformComponent>(ownerID).position);
+                }
+                else {
+                    enemyPos = XMLoadFloat3(&trans.position);
+                }
+                XMVECTOR targetPos = XMLoadFloat3(&pTrans.position);
+
+                XMVECTOR dir = targetPos - enemyPos;
+                dir = XMVectorSetY(dir, 0.0f);
+
+                if (XMVectorGetX(XMVector3LengthSq(dir)) < 0.001f) {
+                    XMMATRIX rotMat = XMMatrixRotationY(pTrans.rotation.y);
+                    dir = XMVector3TransformCoord(XMVectorSet(0, 0, -1.0f, 0), rotMat);
+                }
+                else {
+                    dir = XMVector3Normalize(dir);
+                }
+
+                XMVECTOR knockbackVel = dir * 15.0f;
+                knockbackVel = XMVectorSetY(knockbackVel, 10.0f);
+                XMStoreFloat3(&pComp.velocity, knockbackVel);
+                pComp.isGrounded = false;
+            }
+
             if (targetStatus.IsDead()) {
-                pWorld->DestroyEntity(targetID);
+                // ★修正: プレイヤーなら削除しない
+                if (!isTargetPlayer) {
+                    pWorld->DestroyEntity(targetID);
+                }
             }
         }
     }
@@ -600,6 +841,12 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
 
 void PhysicsSystem::CheckRecoverySphereHit(EntityID recoveryID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
+
+    // ★追加: 相手が Type_None なら判定しない
+    if (registry->HasComponent<ColliderComponent>(targetID)) {
+        if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
+    }
+
     auto& sphere = registry->GetComponent<RecoverySphereComponent>(recoveryID);
     auto& trans = registry->GetComponent<TransformComponent>(recoveryID);
 

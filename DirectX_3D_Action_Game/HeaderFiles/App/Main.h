@@ -8,9 +8,10 @@
 //2025/12/05:新規作成
 //2025/12/05:ECS及びゲーム開発に必要なユーティリティを統合
 =====================================================================*/
-#ifndef MAIN_H
-#define MAIN_H
+#pragma once
 #include <Windows.h>
+#include <vector> // ★追加
+#include <string> // ★追加
 #include "Engine/Graphics.h"
 
 //定数・マクロ定義
@@ -31,6 +32,14 @@ namespace Config {
 
 }
 
+// ★追加: ログ管理用機能
+namespace AppLog {
+	extern std::vector<std::string> logs; // ログ履歴
+	void AddLog(const char* fmt, ...);    // ログ追加
+	void Clear();                         // ログ消去
+}
+// ★追加: どこからでも DebugLog(...) で呼べるようにするマクロ
+#define DebugLog(...) AppLog::AddLog(__VA_ARGS__)
 //関数プロトタイプ宣言
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -40,6 +49,3 @@ void Init(HWND hWnd);//初期化
 void UnInit();//終了処理
 void Update(float deltaTime);//更新処理
 void Draw();//描画処理
-//デバッグログ関数
-void DebugLog(const char* format, ...);
-#endif //MAIN_H

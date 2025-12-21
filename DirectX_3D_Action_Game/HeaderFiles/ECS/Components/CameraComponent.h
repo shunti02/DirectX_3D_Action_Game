@@ -15,4 +15,8 @@ struct CameraComponent {
     float distance = 5.0f;     // 対象との距離
     float height = 3.0f;       // カメラの高さ
     float lookAtOffset = 1.0f; // 注視点の高さ
+
+    // ★追加: カメラ自体の回転角度 (プレイヤーの向きとは独立させるため)
+    float angleX = 0.2f; // 上下角度 (ピッチ) - 初期値で少し見下ろす
+    float angleY = 0.0f; // 左右角度 (ヨー)
 };
