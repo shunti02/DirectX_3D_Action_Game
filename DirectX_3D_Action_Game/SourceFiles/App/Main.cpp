@@ -14,10 +14,42 @@
 #include "App/Game.h"
 #include <iostream>
 #include <cstdio>
+#include <cstdarg>
 #include <crtdbg.h>
+#include "../ImGui/imgui.h"
 #pragma comment(lib, "winmm.lib")
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// ★追加: ログ機能の実装
+namespace AppLog {
+    std::vector<std::string> logs;
+
+    void AddLog(const char* fmt, ...) {
+        char buf[1024];
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(buf, IM_ARRAYSIZE(buf), fmt, args);
+        buf[IM_ARRAYSIZE(buf) - 1] = 0;
+        va_end(args);
+
+        // コンソールにも出す(念のため)
+        OutputDebugString(buf);
+        OutputDebugString("\n");
+
+        // リストに追加
+        logs.push_back(std::string(buf));
+
+        // ログが増えすぎたら古いものを消す (最大1000行)
+        if (logs.size() > 1000) {
+            logs.erase(logs.begin());
+        }
+    }
+
+    void Clear() {
+        logs.clear();
+    }
+}
 /*----------------------------------------------------------
 //内部変数・定数
 ------------------------------------------------------------*/
@@ -43,16 +75,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	//メモリーリークチェックを有効化
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
-    //デバッグコンソールの割り当て
-#ifdef _DEBUG
-    if (AllocConsole()) {
-        FILE* fp = nullptr;
-        freopen_s(&fp, "CONOUT$", "w", stdout);
-        freopen_s(&fp, "CONOUT$", "w", stderr);
-        freopen_s(&fp, "CONIN$", "r", stdin);
-        std::cout.sync_with_stdio();
-    }
-#endif
     //タイマー精度向上
     timeBeginPeriod(1);
 
@@ -106,10 +128,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     UnInit();
     //タイマー設定を戻す
     timeEndPeriod(1);
-
-#ifdef _DEBUG
-    FreeConsole();
-#endif
 
     return (int)msg.wParam;
 }
@@ -178,23 +196,4 @@ bool IsFrameReady()
     //時間が経過したら計測開始時間を更新してtrueを返す
     g_TimeStart = g_TimeEnd;
     return true;
-}
-
-void DebugLog(const char* format, ...)
-{
-#ifdef _DEBUG
-    char buffer[1024];
-    va_list args;
-    va_start(args, format);
-    //フォーマットに従って文字列を生成
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end (args);
-
-    //標準出力に出力
-    std::cout << "[LOG]" << buffer << std::endl;
-
-	//VisualStudioのデバッグ出力ウィンドウにも出力
-    OutputDebugString(buffer);
-    OutputDebugString("\n");
-#endif
 }

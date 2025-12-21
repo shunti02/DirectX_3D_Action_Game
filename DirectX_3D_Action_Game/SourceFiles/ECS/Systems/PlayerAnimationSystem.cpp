@@ -1,6 +1,6 @@
 /*===================================================================
 // ファイル: PlayerAnimationSystem.cpp
-// 概要: プレイヤーのアニメーション制御 (方向傾き対応版)
+// 概要: プレイヤーのアニメーション制御 (ジャンプ優先・完全版)
 =====================================================================*/
 #include "ECS/Systems/PlayerAnimationSystem.h"
 #include "ECS/World.h"
@@ -11,122 +11,330 @@
 #include "ECS/Components/StatusComponent.h"
 #include "App/Game.h"
 #include <cmath>
+#include <algorithm>
 
 using namespace DirectX;
 
+// ---------------------------------------------------------
+// ヘルパー関数
+// ---------------------------------------------------------
+
+// 線形補間
+static float Lerp(float a, float b, float t) {
+    return a + (b - a) * t;
+}
+
+// ピボット回転計算 (点を中心に回転させる)
+static XMVECTOR RotateAroundPivot(XMVECTOR point, XMVECTOR pivot, XMVECTOR rot) {
+    // 1. 原点へ移動 (ピボットを原点に)
+    XMVECTOR dir = point - pivot;
+
+    // 2. 回転行列作成 (Roll=Z, Pitch=X, Yaw=Y)
+    XMMATRIX M = XMMatrixRotationRollPitchYawFromVector(rot);
+
+    // 3. 回転適用
+    dir = XMVector3TransformCoord(dir, M);
+
+    // 4. 元の位置へ戻す
+    return pivot + dir;
+}
+
+// ---------------------------------------------------------
+// メイン更新処理
+// ---------------------------------------------------------
 void PlayerAnimationSystem::Update(float dt) {
     timeAccumulator += dt;
     auto registry = pWorld->GetRegistry();
+
+    // ★ピボット位置 (肩の高さY=2.4fに合わせて設定)
+    XMVECTOR pivotShoulderR = XMVectorSet(0.7f, 0.7f, 0.0f, 0.0f);
+    XMVECTOR pivotShoulderL = XMVectorSet(-0.7f, 0.7f, 0.0f, 0.0f);
+    // 脚の付け根
+    XMVECTOR pivotLegR = XMVectorSet(0.4f, -0.3f, 0.0f, 0.0f);
+    XMVECTOR pivotLegL = XMVectorSet(-0.4f, -0.3f, 0.0f, 0.0f);
 
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (!registry->HasComponent<PlayerPartComponent>(id)) continue;
 
         auto& part = registry->GetComponent<PlayerPartComponent>(id);
-
-        // 親チェック
         if (!registry->HasComponent<TransformComponent>(part.parentID)) continue;
 
         auto& parentTrans = registry->GetComponent<TransformComponent>(part.parentID);
         auto& parentPlayer = registry->GetComponent<PlayerComponent>(part.parentID);
         auto& parentAction = registry->GetComponent<ActionComponent>(part.parentID);
+        auto& parentStatus = registry->GetComponent<StatusComponent>(part.parentID);
 
-        // --- 速度情報の取得 ---
-        // プレイヤーの移動速度 (X, Z) を取得
-        float velX = parentPlayer.velocity.x;
-        float velZ = parentPlayer.velocity.z;
-        float yaw = parentTrans.rotation.y;
+        // --- 状態判定 ---
+        bool isDead = parentStatus.IsDead();
+        bool isHurt = !isDead && (parentStatus.invincibleTimer > 0.0f);
 
-        float fwdSpeed = velX * sinf(yaw) + velZ * cosf(yaw);
-        float rightSpeed = velX * cosf(yaw) - velZ * sinf(yaw);
-        // 移動しているかどうか
-        bool isMoving = (velX * velX + velZ * velZ) > 0.1f;
-        bool isAttacking = parentAction.isAttacking;
+        // ジャンプ中: 接地していない
+        bool isJumping = !isDead && !isHurt && !parentPlayer.isGrounded;
 
-        // --- アニメーション計算 ---
+        // 攻撃中: フラグが立っている
+        bool isAttacking = !isDead && !isHurt && parentAction.isAttacking;
 
-        // 1. 基本の浮遊 (Idle)
-        float floatY = sinf(timeAccumulator * 2.0f) * 0.1f;
+        float speedSq = parentPlayer.velocity.x * parentPlayer.velocity.x + parentPlayer.velocity.z * parentPlayer.velocity.z;
+        bool isMoving = !isDead && !isHurt && (speedSq > 0.1f);
 
-        // 2. 移動時の傾き (Tilt)
-        // 速度に合わせて体を傾ける (ドローンのような挙動)
-        // 前進(Z+) -> 前に傾く(X回転+)
-        // 後退(Z-) -> 後ろに傾く(X回転-)
-        // 右移動(X+) -> 右に傾く(Z回転-)
-        // 左移動(X-) -> 左に傾く(Z回転+)
+        // =========================================================
+        // アニメーションパラメータ計算
+        // =========================================================
 
-        float maxTilt = 0.3f; // 最大傾斜角
-        float tiltSens = 0.05f; // 感度
+        // 1. 全身共通 (Body Transform)
+        XMVECTOR bodyOffset = XMVectorZero(); // 体全体の位置ズレ
+        XMVECTOR bodyRot = XMVectorZero();    // 体全体の回転
 
-        // 速度成分を回転に変換
-        float tiltX = fwdSpeed * tiltSens;
-        float tiltZ = rightSpeed * tiltSens;
+        // 2. パーツ個別 (Local Transform)
+        XMVECTOR localRot = XMVectorZero();   // パーツ自体の回転
+        XMVECTOR pivotPos = XMVectorZero();   // 回転の中心点
+        bool usePivot = false;
 
-        // 制限をかける (Clamp)
-        if (tiltX > maxTilt) tiltX = maxTilt;
-        if (tiltX < -maxTilt) tiltX = -maxTilt;
-        if (tiltZ > maxTilt) tiltZ = maxTilt;
-        if (tiltZ < -maxTilt) tiltZ = -maxTilt;
-
-
-        // 部位ごとの個別処理
-        XMVECTOR offsetVec = XMLoadFloat3(&part.baseOffset);
-        XMVECTOR extraRot = XMVectorZero();
-        XMVECTOR extraOffset = XMVectorZero();
-
-        switch (part.partType) {
-        case PartType::Head:
-            // 頭はあまり傾けず、視線を安定させる（逆補正）
-            offsetVec = XMVectorAdd(offsetVec, XMVectorSet(0, floatY * 0.5f, 0, 0));
-            // 体が傾いても頭は水平を保とうとする演出
-            extraRot = XMVectorSet(tiltX * 0.2f, 0, tiltZ * 0.2f, 0);
-            break;
-
-        case PartType::Body:
-            // 体は移動方向にガッツリ傾く
-            offsetVec = XMVectorAdd(offsetVec, XMVectorSet(0, floatY, 0, 0));
-            extraRot = XMVectorSet(tiltX, 0, tiltZ, 0);
-            break;
-
-        case PartType::ArmRight:
-        case PartType::ArmLeft:
-            // 腕は慣性で少し遅れるイメージ（浮遊感）
-            offsetVec = XMVectorAdd(offsetVec, XMVectorSet(0, floatY * 1.5f, 0, 0));
-            // 傾きも少し控えめに
-            extraRot = XMVectorSet(tiltX * 0.5f, 0, tiltZ * 0.5f, 0);
-
-            // 攻撃モーション (右腕突き出し)
-            if (isAttacking && part.partType == PartType::ArmRight) {
-                float t = 1.0f - (parentAction.cooldownTimer / parentAction.attackCooldown);
-                float thrust = sinf(t * XM_PI) * 2.5f; // 突き出し距離アップ
-
-                // 親の向き(RotationY)を考慮して前方に突き出す計算
-                // ここでは簡易的にローカルZ軸(体の正面)へ加算
-                // 本来は行列計算が必要ですが、簡易実装としてオフセットZに加算
-                // ※パーツのローカル座標系での前方へ
-                extraOffset = XMVectorSet(0, 0, thrust, 0);
-            }
-            break;
+        // パーツごとにピボットを設定
+        if (part.partType == PartType::ShoulderRight || part.partType == PartType::ArmRight || part.partType == PartType::HandRight) {
+            pivotPos = pivotShoulderR; usePivot = true;
+        }
+        else if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft || part.partType == PartType::HandLeft) {
+            pivotPos = pivotShoulderL; usePivot = true;
+        }
+        else if (part.partType == PartType::LegRight) {
+            pivotPos = pivotLegR; usePivot = true;
+        }
+        else if (part.partType == PartType::LegLeft) {
+            pivotPos = pivotLegL; usePivot = true;
         }
 
-        // --- 最終座標の適用 ---
+        // --- A. 共通: ぷかぷか (Idle) ---
+        if (!isDead) {
+            float floatY = sinf(timeAccumulator * 2.0f) * 0.1f;
+            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, floatY, 0, 0));
+        }
 
-        // 1. パーツのベース回転 + アニメーション回転
-        float finalRotX = part.baseRotation.x + XMVectorGetX(extraRot);
-        float finalRotY = parentTrans.rotation.y + part.baseRotation.y;
-        float finalRotZ = part.baseRotation.z + XMVectorGetZ(extraRot);
+        // --- B. 移動: 進行方向への傾き (Move) ---
+        if (isMoving || isJumping) {
+            float yaw = parentTrans.rotation.y;
+            float velX = parentPlayer.velocity.x;
+            float velZ = parentPlayer.velocity.z;
+            // ローカル座標系での速度成分
+            float fwd = velX * sinf(yaw) + velZ * cosf(yaw);
+            float right = velX * cosf(yaw) - velZ * sinf(yaw);
 
-        // 2. 位置の計算
-        // 親のY軸回転だけを適用して、体の周りに配置
+            float tx = std::clamp(fwd * 0.05f, -0.4f, 0.4f);
+            float tz = std::clamp(right * 0.05f, -0.4f, 0.4f);
+
+            bodyRot = XMVectorAdd(bodyRot, XMVectorSet(tx, 0, tz, 0));
+        }
+
+        // --- C. 攻撃: 右手振り下ろし (Attack) ---
+        // ★修正: ジャンプ中は攻撃アニメーションを適用しない (!isJumping)
+        if (isAttacking && !isJumping) {
+            float t = parentAction.cooldownTimer / parentAction.attackCooldown; // 1.0 -> 0.0
+
+            // 1. 全身の動き (Body)
+            float twistY = 0.0f; float leanX = 0.0f; float stepZ = 0.0f; float stepY = 0.0f;
+
+            if (t > 0.4f) {
+                // [溜め]
+                // 体を「右」に捻る (右肩を引く)
+                float subT = (1.0f - t) / 0.6f;
+                float ease = sinf(subT * XM_PIDIV2);
+
+                // ★修正: プラス方向(右回転)で右肩を引く
+                twistY = Lerp(0.0f, -0.8f, ease);
+                leanX = Lerp(0.0f, 0.5f, ease);  // 前傾
+                stepZ = Lerp(0.0f, -0.3f, ease); // 引く
+                stepY = Lerp(0.0f, -0.4f, ease); // 沈む
+            }
+            else if (t > 0.15f) {
+                // [抜刀]
+                // 体を「左」に捻り戻す (右肩を前へ)
+                float subT = (0.4f - t) / 0.25f;
+                float ease = 1.0f - powf(2.0f, -10.0f * subT);
+
+                twistY = Lerp(0.8f, -1.3f, ease); // ★左へ回転
+                leanX = Lerp(0.5f, 0.8f, ease);  // 踏み込む
+                stepZ = Lerp(-0.3f, 1.5f, ease); // 前へ
+                stepY = Lerp(-0.4f, -0.5f, ease);// 低く
+            }
+            else {
+                // [残心]
+                float subT = (0.15f - t) / 0.15f;
+                twistY = Lerp(-1.0f, 0.0f, subT);
+                leanX = Lerp(0.8f, 0.0f, subT);
+                stepZ = Lerp(1.5f, 0.0f, subT);
+                stepY = Lerp(-0.5f, 0.0f, subT);
+            }
+            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, stepY, stepZ, 0));
+            bodyRot = XMVectorAdd(bodyRot, XMVectorSet(leanX, twistY, 0, 0));
+
+            // 2. 右腕全体 (Shoulder/Arm/Hand)
+            if (part.partType == PartType::ShoulderRight || part.partType == PartType::ArmRight || part.partType == PartType::HandRight) {
+                float rX = 0, rY = 0, rZ = 0;
+
+                if (t > 0.4f) {
+                    // [溜め] 
+                    // 右手は「左腰」へ行く必要があります。
+                    // 以前の値では右後ろに行っていた可能性が高いので、符号を逆にします。
+                    float subT = (1.0f - t) / 0.6f;
+                    float ease = sinf(subT * XM_PIDIV2);
+
+                    // Y回転: マイナスで左方向(内側)へ
+                    rY = Lerp(0.0f, -2.0f, ease);   // ★左腰へクロス
+                    rZ = Lerp(0.0f, -0.5f, ease);   // 少し下げる
+                    rX = Lerp(0.0f, -0.5f, ease);   // 軽く捻る
+                }
+                else if (t > 0.15f) {
+                    // [一閃]
+                    // 右手は「右前方」へ
+                    float subT = (0.4f - t) / 0.25f;
+                    float ease = 1.0f - powf(2.0f, -10.0f * subT);
+
+                    // Y回転: プラスで右方向(外側)へ
+                    rY = Lerp(-2.0f, 1.5f, ease);   // ★右へ振り抜く
+                    rZ = Lerp(-0.5f, 0.0f, ease);   // 水平
+                    rX = Lerp(-0.5f, 0.0f, ease);   // 戻す
+                }
+                else {
+                    // [残心]
+                    float subT = (0.15f - t) / 0.15f;
+                    rY = Lerp(1.5f, 0.0f, subT);
+                    rZ = Lerp(0.0f, 0.0f, subT);
+                    rX = 0.0f;
+                }
+                localRot = XMVectorSet(rX, rY, rZ, 0);
+            }
+
+            // 3. 左足 (踏み込み)
+            if (part.partType == PartType::LegLeft) {
+                // 左足: 溜めで縮み、斬撃で踏み込む
+                if (t > 0.4f) localRot = XMVectorAdd(localRot, XMVectorSet(0.8f, 0, 0, 0)); // 縮む
+                else if (t > 0.15f) localRot = XMVectorAdd(localRot, XMVectorSet(-2.0f, 0, 0, 0)); // 踏み込む
+                else {
+                    float subT = (0.15f - t) / 0.15f;
+                    float ang = Lerp(-1.0f, 0.0f, subT);
+                    localRot = XMVectorAdd(localRot, XMVectorSet(ang, 0, 0, 0));
+                }
+            }
+
+            // 4. 右足 (軸足)
+            if (part.partType == PartType::LegRight) {
+                if (t > 0.4f) localRot = XMVectorAdd(localRot, XMVectorSet(1.0f, 0, 0, 0)); // 縮む
+                else if (t > 0.15f) localRot = XMVectorAdd(localRot, XMVectorSet(0.3f, 0, 0, 0)); // 残す
+                else {
+                    float subT = (0.15f - t) / 0.15f;
+                    float ang = Lerp(0.3f, 0.0f, subT);
+                    localRot = XMVectorAdd(localRot, XMVectorSet(ang, 0, 0, 0));
+                }
+            }
+
+            // 5. 左腕 (鞘引き - 左後ろへ)
+            if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft) {
+                usePivot = true; pivotPos = pivotShoulderL;
+                if (t <= 0.4f && t > 0.15f) localRot = XMVectorSet(0, -0.8f, -0.9f, 0);
+            }
+        }
+        // --- D. ジャンプ: 万歳 (Jump) ---
+        else if (isJumping) {
+            // 体を伸ばす
+            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, 0.2f, 0, 0));
+
+            // 左腕 (上へ)
+            if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft || part.partType == PartType::HandLeft) {
+                usePivot = true; pivotPos = pivotShoulderL;
+                // 左腕(-X)に対し、+Z回転で上へ
+                localRot = XMVectorSet(0, 0, -1.7f, 0);
+            }
+            // 右腕 (上へ)
+            if (part.partType == PartType::ShoulderRight || part.partType == PartType::ArmRight || part.partType == PartType::HandRight) {
+                usePivot = true; pivotPos = pivotShoulderR;
+                // 右腕(+X)に対し、-Z回転で上へ
+                localRot = XMVectorSet(0, 0, 1.7f, 0);
+            }
+            // 足を曲げる
+            if (part.partType == PartType::LegLeft) {
+                usePivot = true; pivotPos = pivotLegL;
+                localRot = XMVectorSet(-0.5f, 0, 0, 0); // 後ろへ
+            }
+            if (part.partType == PartType::LegRight) {
+                usePivot = true; pivotPos = pivotLegR;
+                localRot = XMVectorSet(-0.8f, 0, 0, 0); // 右足は深く曲げる
+            }
+        }
+        // --- E. 死亡: 膝をつく (Dead) ---
+        else if (isDead) {
+            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, -0.8f, 0, 0));
+            bodyRot = XMVectorAdd(bodyRot, XMVectorSet(0.5f, 0, 0, 0));
+
+            if (part.partType == PartType::Head) {
+                localRot = XMVectorAdd(localRot, XMVectorSet(0.8f, 0, 0, 0));
+                bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, -0.1f, 0.2f, 0));
+            }
+            if (part.partType == PartType::ShoulderRight || part.partType == PartType::ArmRight) {
+                usePivot = true; pivotPos = pivotShoulderR;
+                localRot = XMVectorSet(0, 0, 1.2f, 0); // 下(-Z)
+            }
+            if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft) {
+                usePivot = true; pivotPos = pivotShoulderL;
+                localRot = XMVectorSet(0, 0, -1.2f, 0); // 下(+Z)
+            }
+            if (part.partType == PartType::LegLeft) {
+                usePivot = true; pivotPos = pivotLegL;
+                localRot = XMVectorSet(-1.5f, 0, 0, 0); // 90度
+            }
+            if (part.partType == PartType::LegRight) {
+                usePivot = true; pivotPos = pivotLegR;
+                localRot = XMVectorSet(-1.5f, 0, 0, 0); // 90度
+            }
+        }
+        // --- F. 被弾: ノックバック (Hit) ---
+        else if (isHurt) {
+            float s = sinf(timeAccumulator * 60.0f) * 0.05f;
+            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(s, s, 0, 0));
+            bodyRot = XMVectorAdd(bodyRot, XMVectorSet(-0.5f, 0, 0, 0)); // 仰け反り
+
+            if (part.partType == PartType::ArmRight) {
+                usePivot = true; pivotPos = pivotShoulderR;
+                localRot = XMVectorSet(0, 0, -1.0f, 0);
+            }
+            if (part.partType == PartType::ArmLeft) {
+                usePivot = true; pivotPos = pivotShoulderL;
+                localRot = XMVectorSet(0, 0, 1.0f, 0);
+            }
+        }
+
+        // =========================================================
+        // 最終適用
+        // =========================================================
+
+        XMVECTOR currentPos = XMLoadFloat3(&part.baseOffset);
+        XMVECTOR currentRot = XMVectorZero();
+
+        // 1. パーツ個別 (ピボット)
+        if (usePivot) {
+            currentPos = RotateAroundPivot(currentPos, pivotPos, localRot);
+            currentRot = XMVectorAdd(currentRot, localRot);
+        }
+        else {
+            currentRot = XMVectorAdd(currentRot, localRot);
+        }
+
+        // 2. 全身連動
+        currentPos = RotateAroundPivot(currentPos, XMVectorZero(), bodyRot);
+        currentRot = XMVectorAdd(currentRot, bodyRot);
+        currentPos = XMVectorAdd(currentPos, bodyOffset);
+
+        // 3. ワールド変換
         XMMATRIX parentRotMat = XMMatrixRotationY(parentTrans.rotation.y);
+        XMVECTOR finalPosVec = XMVector3TransformCoord(currentPos, parentRotMat);
+        finalPosVec = XMVectorAdd(finalPosVec, XMLoadFloat3(&parentTrans.position));
 
-        // 攻撃時の突き出しなどは、パーツの向きに合わせて回転させる必要がある
-        // ここでは「親の向き」に合わせてオフセットを回転
-        XMVECTOR finalOffset = XMVector3TransformCoord(offsetVec + extraOffset, parentRotMat);
-        XMVECTOR finalPos = XMLoadFloat3(&parentTrans.position) + finalOffset;
+        float finalRotX = part.baseRotation.x + XMVectorGetX(currentRot);
+        float finalRotY = parentTrans.rotation.y + part.baseRotation.y + XMVectorGetY(currentRot);
+        float finalRotZ = part.baseRotation.z + XMVectorGetZ(currentRot);
 
-        // 3. コンポーネント更新
+        // 4. 更新
         auto& partTrans = registry->GetComponent<TransformComponent>(id);
-        XMStoreFloat3(&partTrans.position, finalPos);
+        DirectX::XMStoreFloat3(&partTrans.position, finalPosVec);
         partTrans.rotation = { finalRotX, finalRotY, finalRotZ };
     }
 }
