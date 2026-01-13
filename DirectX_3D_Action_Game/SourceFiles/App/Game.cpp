@@ -32,6 +32,19 @@ bool Game::Initialize(HWND hWnd) {
 	// ImGui初期化
 	pGraphics->InitUI(hWnd);
 
+    //Audio初期化
+    pAudio = std::make_unique<Audio>();
+    if (!pAudio->Initialize()) {
+        AppLog::AddLog("[Warning] Audio Initialize Failed.");
+    }
+    else {
+        AppLog::AddLog("[Audio] Audio Initialized.");
+
+        pAudio->LoadSound("SE_JUMP", L"Assets/Audio/jump.wav");
+        pAudio->LoadSound("SE_SWITCH", L"Assets/Audio/switch.wav");
+        pAudio->LoadSound("BGM_TITLE", L"Assets/Audio/title_bgm.wav");
+    }
+
     // 最初のシーンへ遷移 (GameScene)
     pSceneManager->ChangeScene<TitleScene>();
 
@@ -40,6 +53,10 @@ bool Game::Initialize(HWND hWnd) {
 
 void Game::Update(float dt) {
     pInput->Update();
+
+    if (pAudio) {
+        pAudio->Update();
+    }
 
     // ImGui描画開始
     pGraphics->BeginUI();
@@ -82,5 +99,6 @@ void Game::Draw() {
 
 void Game::Shutdown() {
     pSceneManager.reset();
+    pAudio.reset();
     pGraphics.reset();
 }

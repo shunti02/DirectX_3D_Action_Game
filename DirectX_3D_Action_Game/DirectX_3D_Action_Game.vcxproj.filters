@@ -129,6 +129,12 @@
     <ClCompile Include="SourceFiles\ECS\Systems\PlayerAnimationSystem.cpp">
       <Filter>SourceFiles\ECS\Systems</Filter>
     </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\Audio.cpp">
+      <Filter>SourceFiles\Engine</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\SkyBox.cpp">
+      <Filter>SourceFiles\Engine</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HeaderFiles\Engine\Graphics.h">
@@ -278,6 +284,12 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerAnimationSystem.h">
       <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\Audio.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\SkyBox.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\SimplePS.hlsl">
@@ -286,5 +298,16 @@
     <CustomBuild Include="Shaders\SimpleVS.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\SkyVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\SkyPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

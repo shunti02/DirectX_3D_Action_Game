@@ -4,6 +4,7 @@
 =====================================================================*/
 #pragma once
 #include "BaseScene.h"
+#include "Engine/SkyBox.h" 
 
 class GameScene : public BaseScene {
 public:
@@ -11,8 +12,9 @@ public:
 
     void Initialize() override;
     void Update(float dt) override;
-
+    void Draw() override;
 private:
     // Ÿ”s”»’è‚ğs‚¤“à•”ŠÖ”
     void CheckGameCondition();
+    std::unique_ptr<SkyBox> pSkyBox;
 };
