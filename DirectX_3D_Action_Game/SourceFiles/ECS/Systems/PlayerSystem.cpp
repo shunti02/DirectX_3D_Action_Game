@@ -97,6 +97,9 @@ void PlayerSystem::Update(float dt) {
                 if (input->IsKeyDown(VK_SPACE)) {
                     player.velocity.y = player.jumpPower;
                     player.isGrounded = false;
+                    if (Game::GetInstance()->GetAudio()) {
+                        Game::GetInstance()->GetAudio()->Play("SE_JUMP");
+                    }
                 }
             }
             else {
@@ -244,6 +247,12 @@ void PlayerSystem::SwitchCharacter(Registry* registry) {
                 break;
             }
         }
+
+        //Œð‘ã‰¹Ä¶
+        if (Game::GetInstance()->GetAudio()) {
+            Game::GetInstance()->GetAudio()->Play("SE_SWITCH");
+        }
+
         DebugLog("Switched! P%d(Exit) -> P%d(Enter)", currentID, nextID);
     }
 }

@@ -14,6 +14,7 @@
 #include "ECS/Components/PlayerComponent.h"
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/CameraComponent.h"
+#include "ECS/Components/TransformComponent.h"
 
 // システム
 #include "ECS/Systems/RenderSystem.h"
@@ -120,6 +121,15 @@ void GameScene::Initialize() {
         .scale = { 1.0f, 1.0f, 30.0f }
         });
 
+    // ---------------------------------------------------------
+    // ★追加: SkyBox初期化
+    // ---------------------------------------------------------
+    pSkyBox = std::make_unique<SkyBox>();
+    if (!pSkyBox->Initialize(Game::GetInstance()->GetGraphics())) {
+        AppLog::AddLog("Error: SkyBox Initialize Failed."); // ログ出力
+        pSkyBox.reset(); // ★重要: 失敗したらポインタを空にする！
+    }
+
 #ifdef _DEBUG
     std::cout << "GameScene Initialized." << std::endl;
 #endif
@@ -131,6 +141,32 @@ void GameScene::Update(float dt) {
 
     // 2. 勝敗判定
     CheckGameCondition();
+}
+
+void GameScene::Draw() {
+    // 1. 通常のシーン描画 (RenderSystemなどが実行される)
+    BaseScene::Draw();
+
+    // 2. SkyBox描画
+    // カメラ情報の取得
+    auto registry = pWorld->GetRegistry();
+    XMMATRIX view = XMMatrixIdentity();
+    XMMATRIX proj = XMMatrixIdentity();
+
+    // アクティブなカメラを探す
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (registry->HasComponent<CameraComponent>(id)) {
+            auto& cam = registry->GetComponent<CameraComponent>(id);
+            view = cam.view;
+            proj = cam.projection;
+            break; // 1つ見つければOK
+        }
+    }
+
+    // 背景描画実行
+    if (pSkyBox) {
+        pSkyBox->Draw(Game::GetInstance()->GetGraphics(), view, proj);
+    }
 }
 
 void GameScene::CheckGameCondition() {
