@@ -1,6 +1,7 @@
 #define NOMINMAX 
 
 #include "App/Main.h"
+#include "App/Game.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/World.h"
 #include "ECS/Components/TransformComponent.h"
@@ -647,6 +648,11 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
             targetStatus.TakeDamage(attackBox.damage);
             targetStatus.invincibleTimer = 0.5f;
             DebugLog("Hit! Target:%d Dmg:%d HP:%d", targetID, attackBox.damage, targetStatus.hp);
+            // ★追加: ヒットエフェクト (小爆発)
+            if (registry->HasComponent<TransformComponent>(targetID)) {
+                auto& tf = registry->GetComponent<TransformComponent>(targetID);
+                
+            }
             // ★修正: ノックバック処理
             if (isTargetPlayer) {
                 auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
@@ -688,7 +694,15 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
             // 死亡判定
             if (targetStatus.IsDead()) {
                 DebugLog("Target(%d) Defeated!", targetID);
+                // ★追加: 死亡エフェクト (大爆発)
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
 
+                    // 音も鳴らす
+                    if (auto audio = Game::GetInstance()->GetAudio()) {
+                        audio->Play("SE_SWITCH");
+                    }
+                }
                 // ★修正: プレイヤーなら削除しない (Deadアニメーションのため)
                 if (!isTargetPlayer) {
                     pWorld->DestroyEntity(targetID);
@@ -797,7 +811,11 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
             targetStatus.TakeDamage(sphere.damage);
             targetStatus.invincibleTimer = 0.5f;
             DebugLog("Sphere Hit! Target(%d)", targetID);
-
+            // ★追加: ヒットエフェクト
+            if (registry->HasComponent<TransformComponent>(targetID)) {
+                auto& tf = registry->GetComponent<TransformComponent>(targetID);
+               
+            }
             // ★修正: ノックバック処理
             if (isTargetPlayer) {
                 auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
@@ -830,6 +848,13 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
             }
 
             if (targetStatus.IsDead()) {
+                // ★追加: 死亡エフェクト
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
+                    if (auto audio = Game::GetInstance()->GetAudio()) {
+                        audio->Play("SE_SWITCH");
+                    }
+                }
                 // ★修正: プレイヤーなら削除しない
                 if (!isTargetPlayer) {
                     pWorld->DestroyEntity(targetID);

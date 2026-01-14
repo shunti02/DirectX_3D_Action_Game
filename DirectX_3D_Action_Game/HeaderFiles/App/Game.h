@@ -31,7 +31,6 @@ public:
     Input* GetInput() const { return pInput.get(); }
     Audio* GetAudio() const { return pAudio.get(); }
     SceneManager* GetSceneManager() const { return pSceneManager.get(); }
-
 private:
     static Game* instance; // シングルトンインスタンス
 

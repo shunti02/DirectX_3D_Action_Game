@@ -40,7 +40,8 @@ void GameScene::Initialize() {
     pWorld->AddSystem<PlayerAnimationSystem>()->Init(pWorld.get());
     pWorld->AddSystem<CameraSystem>()->Init(pWorld.get());
     pWorld->AddSystem<RenderSystem>()->Init(pWorld.get());
-    pWorld->AddSystem<UISystem>()->Init(pWorld.get()); // UIは最後に
+    pUISystem = pWorld->AddSystem<UISystem>(); // ★ポインタを保存
+    pUISystem->Init(pWorld.get());
 
     // ---------------------------------------------------------
     // 2. エンティティ配置 (EntityFactory利用)
@@ -166,6 +167,12 @@ void GameScene::Draw() {
     // 背景描画実行
     if (pSkyBox) {
         pSkyBox->Draw(Game::GetInstance()->GetGraphics(), view, proj);
+    }
+
+    Game::GetInstance()->GetGraphics()->GetContext()->OMSetDepthStencilState(nullptr, 0);
+    //UI描画
+    if (pUISystem) {
+        pUISystem->Draw(Game::GetInstance()->GetGraphics());
     }
 }
 

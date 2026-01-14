@@ -10,9 +10,11 @@
 
 Graphics::Graphics() {}
 Graphics::~Graphics() {
-    ImGui_ImplDX11_Shutdown();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
+    if (ImGui::GetCurrentContext() != nullptr) {
+        ImGui_ImplDX11_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+    }
 }
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)
@@ -38,8 +40,14 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     D3D_FEATURE_LEVEL featureLevels[] = { D3D_FEATURE_LEVEL_11_0 };
     D3D_FEATURE_LEVEL featureLevel;
 
+    UINT createDeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+#ifdef _DEBUG
+    createDeviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
+#endif
+
     hr = D3D11CreateDeviceAndSwapChain(
-        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0,
+        NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
+        createDeviceFlags,
         featureLevels, 1, D3D11_SDK_VERSION,
         &sd, &pSwapChain, &pDevice, &featureLevel, &pContext
     );
@@ -81,7 +89,7 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     // ★追加: ラスタライザーステートの作成（両面描画設定）
     D3D11_RASTERIZER_DESC rasterDesc = {};
     rasterDesc.AntialiasedLineEnable = FALSE;
-    rasterDesc.CullMode = D3D11_CULL_BACK; // ★重要: "NONE" にすると裏面も描画される
+    rasterDesc.CullMode = D3D11_CULL_NONE; // ★重要: "NONE" にすると裏面も描画される
     rasterDesc.DepthBias = 0;
     rasterDesc.DepthBiasClamp = 0.0f;
     rasterDesc.DepthClipEnable = TRUE;
@@ -134,7 +142,11 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
 
     // 4. レンダーターゲットと深度ビューを紐づけてセット
     pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), pDepthStencilView.Get());
-
+    // ★追加: Direct2Dの初期化
+    if (!InitD2D(pSwapChain.Get())) {
+        MessageBox(NULL, "Direct2D Init Failed", "Error", MB_OK);
+        return false;
+    }
     return true;
 }
 
@@ -173,6 +185,55 @@ bool Graphics::CompileShaderFromFile(const std::wstring& filename, const std::st
         }
         return false;
     }
+    return true;
+}
+
+bool Graphics::InitD2D(IDXGISwapChain* swapChain)
+{
+    HRESULT hr;
+
+    // 1. D2Dファクトリ作成
+    D2D1_FACTORY_OPTIONS options = {};
+    hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,__uuidof(ID2D1Factory),&options,reinterpret_cast<void**>(pD2DFactory.GetAddressOf())
+    );
+    if (FAILED(hr)) return false;
+
+    // 2. DWriteファクトリ作成 (フォント管理)
+    hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(pDWriteFactory.GetAddressOf()));
+    if (FAILED(hr)) return false;
+
+    // 3. バックバッファをDXGIサーフェスとして取得
+    ComPtr<IDXGISurface> pBackBuffer;
+    hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
+    if (FAILED(hr)) return false;
+
+    // 4. DXGIサーフェスからD2Dレンダーターゲット作成
+    // これにより、Direct3Dの画面に直接Direct2Dで描画できるようになる
+    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_DEFAULT,
+        D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED)
+    );
+
+    hr = pD2DFactory->CreateDxgiSurfaceRenderTarget(pBackBuffer.Get(), &props, &pD2DRenderTarget);
+    if (FAILED(hr)) return false;
+
+    // 5. 標準フォント設定 (メイリオ, 24px)
+    hr = pDWriteFactory->CreateTextFormat(
+        L"Meiryo",                // フォント名
+        NULL,
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        24.0f,                    // サイズ
+        L"ja-jp",                 // ロケール
+        &pTextFormat
+    );
+    if (FAILED(hr)) return false;
+
+    // 6. ブラシ作成 (色は描画時に変えるのでとりあえず白で)
+    hr = pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrush);
+    if (FAILED(hr)) return false;
+
     return true;
 }
 
@@ -218,6 +279,21 @@ bool Graphics::CreatePixelShader(const std::wstring& filename, ID3D11PixelShader
     }
 
     HRESULT hr = pDevice->CreatePixelShader(pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize(), nullptr, ppPixelShader);
+    if (FAILED(hr)) return false;
+
+    return true;
+}
+
+bool Graphics::CreateGeometryShader(const std::wstring& filename, ID3D11GeometryShader** ppGeometryShader)
+{
+    ComPtr<ID3DBlob> pGSBlob;
+    // エントリーポイント: main, シェーダーモデル: gs_5_0
+    if (!CompileShaderFromFile(filename, "main", "gs_5_0", &pGSBlob)) {
+        MessageBoxW(NULL, L"Failed to compile geometry shader", filename.c_str(), MB_OK);
+        return false;
+    }
+
+    HRESULT hr = pDevice->CreateGeometryShader(pGSBlob->GetBufferPointer(), pGSBlob->GetBufferSize(), nullptr, ppGeometryShader);
     if (FAILED(hr)) return false;
 
     return true;
@@ -299,4 +375,58 @@ void Graphics::EndUI()
     // ImGuiフレーム終了・描画
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+void Graphics::BeginDraw2D()
+{
+    if (pD2DRenderTarget) {
+        pD2DRenderTarget->BeginDraw();
+    }
+}
+
+void Graphics::EndDraw2D()
+{
+    if (pD2DRenderTarget) {
+        pD2DRenderTarget->EndDraw();
+    }
+}
+
+void Graphics::DrawString(const std::wstring& text, float x, float y, float size, uint32_t color)
+{
+    // ファクトリなどが無ければ中止
+    if (!pD2DRenderTarget || !pDWriteFactory || !pBrush) return;
+
+    // 1. 指定されたサイズで一時的なフォントフォーマットを作成
+    // (※本来はMapなどでキャッシュすべきですが、今回は簡易的に毎回作成します)
+    ComPtr<IDWriteTextFormat> localFormat;
+    HRESULT hr = pDWriteFactory->CreateTextFormat(
+        L"Meiryo",                // フォント名
+        NULL,
+        DWRITE_FONT_WEIGHT_NORMAL,
+        DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL,
+        size,                     // ★引数のサイズを使う！
+        L"ja-jp",
+        &localFormat
+    );
+    if (FAILED(hr)) return;
+
+    // 2. ブラシの色設定
+    float a = ((color >> 24) & 0xFF) / 255.0f;
+    float b = ((color >> 16) & 0xFF) / 255.0f;
+    float g = ((color >> 8) & 0xFF) / 255.0f;
+    float r = (color & 0xFF) / 255.0f;
+    pBrush->SetColor(D2D1::ColorF(r, g, b, a));
+
+    // 3. 描画エリア (文字が切れないように十分大きく取る)
+    D2D1_RECT_F layoutRect = D2D1::RectF(x, y, x + 2000.0f, y + 2000.0f);
+
+    // 4. 描画実行
+    pD2DRenderTarget->DrawText(
+        text.c_str(),
+        static_cast<UINT32>(text.length()),
+        localFormat.Get(),        // ★作成したフォーマットを使う
+        layoutRect,
+        pBrush.Get()
+    );
 }
