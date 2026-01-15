@@ -10,11 +10,16 @@
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/RolesComponent.h"
 #include "../../../ImGui/imgui.h"
+#include "App/Game.h"
 #include "Engine/Graphics.h"
 #include "App/Main.h"
 #include <format>
 #include <string>
 
+// ワールド情報を保存
+void UISystem::Init(World* world) {
+    pWorld = world;
+}
 // 文字列変換用ヘルパー (std::string -> std::wstring)
 std::wstring ToWString(const std::string& str) {
     size_t newsize = str.length() + 1;
@@ -129,59 +134,79 @@ void UISystem::Update(float dt) {
 void UISystem::Draw(Graphics* pGraphics) {
     if (!pGraphics) return;
 
+    // プレイヤーと敵の情報を収集
+    auto registry = pWorld->GetRegistry();
+    EntityID playerID = ECSConfig::INVALID_ID;
+    int enemyCount = 0;
+
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (registry->HasComponent<PlayerComponent>(id)) {
+            if (registry->GetComponent<PlayerComponent>(id).isActive) {
+                playerID = id;
+            }
+        }
+        else if (registry->HasComponent<EnemyComponent>(id) &&
+            registry->HasComponent<StatusComponent>(id))
+        {
+            if (registry->GetComponent<StatusComponent>(id).hp > 0) {
+                enemyCount++;
+            }
+        }
+    }
+
+    // Direct2D 描画開始
     pGraphics->BeginDraw2D();
 
-    auto registry = pWorld->GetRegistry();
+    float scW = (float)Config::SCREEN_WIDTH;
+    float scH = (float)Config::SCREEN_HEIGHT;
 
-    // ---------------------------------------------------------
-    // 1. プレイヤー情報 (左上)
-    // ---------------------------------------------------------
-    float yPos = 20.0f;
-    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (!registry->HasComponent<PlayerComponent>(id)) continue;
+    // 1. 照準 (Reticle)
+    float cx = scW / 2.0f;
+    float cy = scH / 2.0f;
+    pGraphics->FillRect(cx - 15.0f, cy - 1.0f, 30.0f, 2.0f, 0x8800FF00); // 横
+    pGraphics->FillRect(cx - 1.0f, cy - 15.0f, 2.0f, 30.0f, 0x8800FF00); // 縦
+    pGraphics->FillRect(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, 0xFF00FF00);   // 点
 
-        auto& player = registry->GetComponent<PlayerComponent>(id);
+    // 2. ステージ情報 (右上)
+    int stage = Game::GetInstance()->GetCurrentStage();
+    std::wstring stageStr = L"STAGE: " + std::to_wstring(stage);
+    std::wstring enemyStr = L"HOSTILES: " + std::to_wstring(enemyCount);
 
-        // 操作中のキャラのみ大きく表示
-        if (player.isActive && registry->HasComponent<StatusComponent>(id)) {
-            auto& status = registry->GetComponent<StatusComponent>(id);
+    // 背景プレート
+    pGraphics->FillRect(scW - 300.0f, 20.0f, 280.0f, 80.0f, 0x88000000); // 半透明黒
+    pGraphics->DrawRect(scW - 300.0f, 20.0f, 280.0f, 80.0f, 0xFFFFFFFF); // 白枠
 
-            // HP表示テキスト
-            std::string hpStr = std::format("HP: {:3} / {:3}", status.hp, status.maxHp);
-            std::wstring wHpStr = ToWString(hpStr);
+    pGraphics->DrawString(stageStr.c_str(), scW - 280.0f, 30.0f, 24.0f, 0xFF00FFFF);
+    uint32_t eColor = (enemyCount > 0) ? 0xFFFF4444 : 0xFF00FF00;
+    pGraphics->DrawString(enemyStr.c_str(), scW - 280.0f, 60.0f, 28.0f, eColor);
 
-            // HPが少なくなったら赤くする
-            uint32_t color = 0xFFFFFFFF; // 白
-            if (status.hp <= status.maxHp * 0.3f) {
-                color = 0xFFFF0000; // 赤
-            }
+    // 3. プレイヤーHPバー (左下)
+    if (playerID != ECSConfig::INVALID_ID) {
+        auto& status = registry->GetComponent<StatusComponent>(playerID);
+        auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
 
-            pGraphics->DrawString(L"◆ PLAYER STATUS", 20.0f, yPos, 20.0f, 0xFF88CCFF);
-            pGraphics->DrawString(wHpStr, 40.0f, yPos + 30.0f, 40.0f, color);
+        float barX = 50.0f;
+        float barY = scH - 80.0f;
+        float barW = 300.0f;
+        float barH = 20.0f;
 
-            yPos += 100.0f;
-        }
+        // 背景
+        pGraphics->FillRect(barX, barY, barW, barH, 0x88444444);
+
+        // 中身
+        float ratio = (float)status.hp / (float)status.maxHp;
+        uint32_t hpColor = 0xFF0088FF;
+        if (ratio < 0.3f) hpColor = 0xFFFF0000;
+        else if (ratio < 0.6f) hpColor = 0xFFFFFF00;
+        pGraphics->FillRect(barX, barY, barW * ratio, barH, hpColor);
+
+        // 枠
+        pGraphics->DrawRect(barX, barY, barW, barH, 0xFFFFFFFF);
+
+        // テキスト
+        std::wstring hpText = L"ARMOR: " + std::to_wstring(status.hp);
+        pGraphics->DrawString(hpText.c_str(), barX, barY - 30.0f, 20.0f, 0xFFFFFFFF);
     }
-
-    // ---------------------------------------------------------
-    // 2. 敵の残数 (右上)
-    // ---------------------------------------------------------
-    int enemyCount = 0;
-    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (!registry->HasComponent<PlayerComponent>(id) &&
-            registry->HasComponent<StatusComponent>(id)) {
-            auto& st = registry->GetComponent<StatusComponent>(id);
-            if (st.hp > 0) enemyCount++;
-        }
-    }
-    std::string enemyStr = std::format("ENEMIES: {:02}", enemyCount);
-    pGraphics->DrawString(ToWString(enemyStr), 1000.0f, 20.0f, 32.0f, 0xFFFFDD00);
-
-    // ---------------------------------------------------------
-    // 3. 操作ガイド (下部)
-    // ---------------------------------------------------------
-    pGraphics->DrawString(L"[WASD] Move   [SPACE] Jump   [TAB] Switch Character",
-        300.0f, 650.0f, 20.0f, 0xFFCCCCCC);
 
     pGraphics->EndDraw2D();
 }

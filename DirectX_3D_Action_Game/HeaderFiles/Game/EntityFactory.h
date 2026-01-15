@@ -19,6 +19,8 @@
 #include "ECS/Components/RecoverySphereComponent.h"
 #include "ECS/Components/RolesComponent.h"
 #include "ECS/Components/PlayerPartComponent.h"
+#include "ECS/Components/PhysicsComponent.h"
+#include "ECS/Components/BulletComponent.h"
 #include "App/Game.h"
 #include "Engine/GeometryGenerator.h"
 #include "Engine/Vertex.h"
@@ -462,7 +464,7 @@ namespace EntityFactory {
         else if (params.type == "Enemy") {
             world->AddComponent<MeshComponent>(id);
             world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 2.0f });
+            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 3.0f,.isRanged = false });
             world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 10, .maxHp = 10, .attackPower = 20 });
 
             // キューブ形状 (1x1x1)
@@ -473,8 +475,8 @@ namespace EntityFactory {
         else if (params.type == "Enemy2") {
             world->AddComponent<MeshComponent>(id);
             world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 4.0f });
-            world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 10, .maxHp = 10, .attackPower = 20 });
+            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 2.5f,.isRanged = true });
+            world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 100, .maxHp = 100, .attackPower = 20 });
 
             // キューブ形状 (1x1x1)
             AttachMeshAndCollider(id, world, ShapeType::CUBE, params.color, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
@@ -489,6 +491,16 @@ namespace EntityFactory {
             DirectX::XMFLOAT4 color = (params.type == "Ground") ? Colors::Gray : Colors::Magenta;
             AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
             DebugLog("[Factory] Created Ground ID: %d", id);
+        }
+        else if (params.type == "HealSpot" || params.type == "Cube" || params.type == "Diamond") {
+            world->AddComponent<MeshComponent>(id);
+            world->AddComponent<ColliderComponent>(id);
+
+            // 形: DOUBLE_PYRAMID (ダイヤ型/クリスタル型)
+            // 当たり判定: Type_Box (箱型)
+            AttachMeshAndCollider(id, world, ShapeType::DOUBLE_PYRAMID, params.color, ColliderType::Type_Box, 1.0f, 2.0f, 1.0f);
+
+            DebugLog("[Factory] Created Crystal/HealSpot ID: %d", id);
         }
         
         else if (params.type == "Camera") {
@@ -532,7 +544,7 @@ namespace EntityFactory {
         AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Green, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
         DebugLog("Spawned RecoveryBox! ID: %d", id);
     }
-    // ★修正: 攻撃球の生成 (MeshとColliderを追加)
+    // 攻撃球の生成 (MeshとColliderを追加)
     inline void CreateAttackSphere(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, int damage) {
         EntityID id = world->CreateEntity()
             .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} }) // 初期サイズ
@@ -546,7 +558,7 @@ namespace EntityFactory {
                 })
             .Build();
 
-        // ★追加: 見た目と当たり判定をつける
+        // 見た目と当たり判定をつける
         world->AddComponent<MeshComponent>(id);
         world->AddComponent<ColliderComponent>(id);
 
@@ -555,27 +567,53 @@ namespace EntityFactory {
 
         DebugLog("Spawned AttackSphere! ID: %d", id);
     }
-    // ★追加: 回復球の生成
+    // 回復球の生成
     inline void CreateRecoverySphere(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, int heal) {
         EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {5.0f, 5.0f, 5.0f} })
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {1.0f, 1.0f, 1.0f} })
             .AddComponent<RecoverySphereComponent>(RecoverySphereComponent{
-                .ownerID = (int)ownerID,
-                .healAmount = heal,
-                .lifeTime = 0.6f,
-                .currentRadius = 1.0f,
-                .maxRadius = 20.0f,
-                .expansionSpeed = 20.0f
+            // 古いメンバ(ownerID, currentRadius等)を消し、新しいメンバのみにする
+            .radius = 2.0f,
+            .healAmount = heal,
+            .isActive = true,
+            .rotationAngle = 0.0f
                 })
             .Build();
 
-        // ★追加: 見た目と当たり判定をつける
+        // 見た目と当たり判定をつける
         world->AddComponent<MeshComponent>(id);
         world->AddComponent<ColliderComponent>(id);
 
-        // 緑の球、半径1.0
-        AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::Green, ColliderType::Type_Sphere, 0.5f, 0.0f, 0.0f);
+        // 緑の球、半径0.5 (Scale1.0のとき)
+        // ここでは ShapeType::SPHERE (半径1) なので Scaleを調整
+        AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::Green, ColliderType::Type_Sphere, 1.0f, 0.0f, 0.0f);
 
-        DebugLog("Spawned RecoverySphere! ID: %d", id);
+        DebugLog("Spawned RecoverySphere (Item)! ID: %d", id);
+    }
+    // ★追加: 敵の弾を生成
+    inline void CreateEnemyBullet(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir, int damage) {
+        // 小さな赤い球
+        EntityID id = world->CreateEntity()
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.3f, 0.3f, 0.3f} })
+            .AddComponent<BulletComponent>(BulletComponent{ .damage = damage, .lifeTime = 5.0f, .isActive = true })
+            .Build();
+
+        world->AddComponent<MeshComponent>(id);
+        world->AddComponent<ColliderComponent>(id);
+
+        // メッシュと当たり判定 (球)
+        AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::Red, ColliderType::Type_Sphere, 0.3f, 0.0f, 0.0f);
+
+        // 物理挙動 (飛んでいく速度)
+        if (!world->GetRegistry()->HasComponent<PhysicsComponent>(id)) {
+            // 弾速 (10.0f)
+            float speed = 10.0f;
+            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{
+                .velocity = { dir.x * speed, dir.y * speed, dir.z * speed },
+                .useGravity = false // 重力の影響を受けない
+                });
+        }
+
+        DebugLog("Enemy Fired! ID: %d", id);
     }
 }

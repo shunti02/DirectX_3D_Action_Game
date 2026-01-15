@@ -33,7 +33,12 @@ void EnemySystem::Update(float dt) {
 
         auto& enemy = registry->GetComponent<EnemyComponent>(id);
         auto& trans = registry->GetComponent<TransformComponent>(id);
-
+        //// ★追加: 遠距離タイプ判定 (簡易的にHPが高い敵を遠距離タイプにする)
+        //if (registry->HasComponent<StatusComponent>(id)) {
+        //    if (registry->GetComponent<StatusComponent>(id).maxHp > 50) {
+        //        enemy.isRanged = true;
+        //    }
+        //}
         // ---------------------------------------------------------
         // ターゲット（生存している最寄りのプレイヤー）を探す
         // ---------------------------------------------------------
@@ -64,61 +69,101 @@ void EnemySystem::Update(float dt) {
 
         // ターゲットが見つからない（全滅など）なら何もしない
         if (targetID == ECSConfig::INVALID_ID) return;
-
-
-        // ---------------------------------------------------------
-        // 状態マシン (State Machine)
-        // ---------------------------------------------------------
         auto& targetTrans = registry->GetComponent<TransformComponent>(targetID);
         XMVECTOR targetPos = XMLoadFloat3(&targetTrans.position);
         float dist = std::sqrt(minDistSq);
 
+        // ---------------------------------------------------------
+        // ★追加: 遠距離攻撃ロジック (状態マシンとは並行して動く)
+        // ---------------------------------------------------------
+        if (enemy.isRanged) {
+            // クールダウン更新
+            if (enemy.attackCooldownTimer > 0.0f) {
+                enemy.attackCooldownTimer -= dt;
+            }
+
+            // 射程内(20m) かつ クールダウン完了なら発射
+            if (dist < 20.0f && enemy.attackCooldownTimer <= 0.0f) {
+                // 方向計算
+                float dx = targetTrans.position.x - trans.position.x;
+                float dz = targetTrans.position.z - trans.position.z;
+                float dLen = sqrt(dx * dx + dz * dz);
+
+                if (dLen > 0.001f) {
+                    XMFLOAT3 dir = { dx / dLen, 0.0f, dz / dLen }; // 水平撃ち
+
+                    // 発射位置
+                    XMFLOAT3 spawnPos = trans.position;
+                    spawnPos.y += 1.0f;
+                    spawnPos.x += dir.x * 1.5f;
+                    spawnPos.z += dir.z * 1.5f;
+
+                    int dmg = 10;
+                    if (registry->HasComponent<StatusComponent>(id)) {
+                        dmg = registry->GetComponent<StatusComponent>(id).attackPower;
+                    }
+
+                    // 弾生成
+                    EntityFactory::CreateEnemyBullet(pWorld, spawnPos, dir, dmg);
+
+                    // タイマーリセット
+                    enemy.attackCooldownTimer = enemy.attackInterval;
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 状態マシン (State Machine)
+        // ---------------------------------------------------------
         switch (enemy.state) {
 
             // --- [追跡状態] ---
         case EnemyState::Chase: {
             // 攻撃射程に入ったら攻撃開始
-            if (dist <= enemy.attackRange) {
+            if (!enemy.isRanged && dist <= enemy.attackRange) {
                 enemy.state = EnemyState::Attack;
                 enemy.attackTimer = enemy.attackDuration;
 
-                // ★追加: 攻撃開始ログ
-                DebugLog("Enemy(%d): Attack Start! Target:%d", id, targetID);
+                DebugLog("Enemy(%d): Melee Attack Start!", id);
 
-                // 攻撃発生！（AttackBox生成）
-                // 敵の前方に判定を出す
-                float angle = trans.rotation.y;
-                float offsetDist = 1.5f;
-                XMFLOAT3 spawnPos = {
-                    trans.position.x + sinf(angle) * offsetDist,
-                    trans.position.y + 0.5f,
-                    trans.position.z + cosf(angle) * offsetDist
-                };
-
-                // 敵の攻撃力（Statusがあれば使う）
                 int dmg = 10;
                 if (registry->HasComponent<StatusComponent>(id)) {
                     dmg = registry->GetComponent<StatusComponent>(id).attackPower;
                 }
 
-                // EntityFactoryを使って攻撃判定を生成
-                // ※敵の攻撃は少し大きめにするなどの調整もここで可能
-                EntityFactory::CreateAttackHitbox(pWorld, id, spawnPos, { 2.0f, 2.0f, 2.0f }, dmg);
+                // 近接攻撃 (広がる球) を生成
+                EntityFactory::CreateAttackSphere(pWorld, id, trans.position, dmg);
             }
             else {
-                // 移動処理
-                XMVECTOR dir = XMVector3Normalize(targetPos - enemyPos);
+                // --- 移動処理 ---
+                float currentSpeed = enemy.moveSpeed;
 
-                // 向きを変える (Y軸回転)
-                float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
-                trans.rotation.y = angle;
+                // 遠距離タイプの場合、近づきすぎたら止まる（または逃げる）
+                if (enemy.isRanged) {
+                    if (dist < 8.0f) {
+                        currentSpeed = 0.0f; // 射撃位置を維持
+                        // 逃げる処理を入れるなら: currentSpeed = -enemy.moveSpeed;
+                    }
+                }
 
-                // 前進
-                XMVECTOR vel = dir * enemy.moveSpeed * dt;
-                // Y軸の移動は無視（重力はPhysicsSystem等でやるべきだが、簡易的にここでは高さ維持）
-                // 本格的にはPhysicsSystemで速度加算する形が良いが、今は直接座標更新
-                trans.position.x += XMVectorGetX(vel);
-                trans.position.z += XMVectorGetZ(vel);
+                if (dist > 0.1f && currentSpeed != 0.0f) {
+                    XMVECTOR dir = XMVector3Normalize(targetPos - enemyPos);
+
+                    // 向き変更
+                    float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
+                    trans.rotation.y = angle;
+
+                    // 移動
+                    XMVECTOR vel = dir * currentSpeed * dt;
+                    trans.position.x += XMVectorGetX(vel);
+                    trans.position.z += XMVectorGetZ(vel);
+                }
+                else {
+                    // 止まっていても向きだけは合わせる
+                    XMVECTOR dir = XMVector3Normalize(targetPos - enemyPos);
+                    float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
+                    trans.rotation.y = angle;
+                }
             }
             break;
         }

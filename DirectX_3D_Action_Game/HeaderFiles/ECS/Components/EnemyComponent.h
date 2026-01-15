@@ -16,4 +16,9 @@ struct EnemyComponent {
     float attackDuration = 0.5f;
     float cooldownTime = 2.0f;
     EnemyState state = EnemyState::Chase;
+
+    bool isRanged = false;            // 遠距離タイプかどうか
+    float attackCooldownTimer = 0.0f; // 射撃のクールダウン
+    float attackInterval = 3.0f;      // 射撃間隔（秒）
+
 };

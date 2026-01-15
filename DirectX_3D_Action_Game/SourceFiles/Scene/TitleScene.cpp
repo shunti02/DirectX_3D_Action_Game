@@ -5,6 +5,7 @@
 #include "Scene/TitleScene.h"
 #include "App/Game.h"
 #include "Scene/GameScene.h"
+#include "Scene/CharacterSelectScene.h"
 #include "App/Main.h"
 #include "../ImGui/imgui.h"
 
@@ -27,10 +28,21 @@ void TitleScene::Initialize() {
 }
 
 void TitleScene::Update(float dt) {
-    //if (Game::GetInstance()->GetInput()->IsKeyDown(VK_RETURN)) {
-    //    Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
-    //}
     Input* input = Game::GetInstance()->GetInput();
+
+    // --- デバッグ用: キャラ選択 ---
+    if (input->IsKeyDown('1')) {
+        Game::GetInstance()->SetPlayerType(PlayerType::AssaultStriker);
+        AppLog::AddLog("Selected: Type A (Assault Striker)");
+    }
+    if (input->IsKeyDown('2')) {
+        Game::GetInstance()->SetPlayerType(PlayerType::BusterGuard);
+        AppLog::AddLog("Selected: Type B (Buster Guard)");
+    }
+    if (input->IsKeyDown('3')) {
+        Game::GetInstance()->SetPlayerType(PlayerType::PlasmaSniper);
+        AppLog::AddLog("Selected: Type C (Plasma Sniper)");
+    }
 
     // 背景をゆっくり回転させる
     cameraAngle += 0.1f * dt;
@@ -39,29 +51,19 @@ void TitleScene::Update(float dt) {
     blinkTimer += dt;
 
     // スペースキーでゲーム開始
-    if (input->IsKeyDown(VK_SPACE)) {
+    if (input->IsKeyDown(VK_RETURN)) {
         // SE再生
         if (auto audio = Game::GetInstance()->GetAudio()) {
             audio->Play("SE_JUMP"); // 決定音の代わりにJUMP音を鳴らす（仮）
             // BGMを止めるならここで audio->StopAll();
         }
-
+        Game::GetInstance()->SetCurrentStage(1);
         // シーン遷移
-        Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
+        Game::GetInstance()->GetSceneManager()->ChangeScene<CharacterSelectScene>();
     }
 }
 
 void TitleScene::Draw() {
-    /*ImGui::SetNextWindowPos(ImVec2(Config::SCREEN_WIDTH / 2 - 100, Config::SCREEN_HEIGHT / 2 - 50));
-    ImGui::SetNextWindowSize(ImVec2(200, 100));
-    ImGui::Begin("Title", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground);
-
-    ImGui::SetWindowFontScale(2.0f);
-    ImGui::Text("ACTION GAME");
-    ImGui::SetWindowFontScale(1.0f);
-    ImGui::Text("Press ENTER to Start");
-
-    ImGui::End();*/
     Graphics* pGraphics = Game::GetInstance()->GetGraphics();
 
     // 1. SkyBox描画 (カメラを回す)
@@ -86,12 +88,12 @@ void TitleScene::Draw() {
         //pGraphics->DrawString(L"- 宇宙の戦士 -", 520.0f, 280.0f, 32.0f, 0xFFFFFFFF);
 
         // 点滅する "PRESS SPACE"
-        // sin波を使って透明度を変化させる (0.0 ~ 1.0)
+        // sin波を使って透明度を変化させる (0.0  1.0)
         float alpha = (sinf(blinkTimer * 5.0f) + 1.0f) * 0.5f;
         uint32_t alphaInt = static_cast<uint32_t>(alpha * 255.0f);
         uint32_t color = (alphaInt << 24) | 0x00FFFF00; // 黄色 + アルファ
 
-        pGraphics->DrawString(L"PRESS SPACE TO START", 430.0f, 500.0f, 32.0f, color);
+        pGraphics->DrawString(L"PRESS ENTER TO START", 430.0f, 500.0f, 32.0f, color);
 
         pGraphics->EndDraw2D();
     }
