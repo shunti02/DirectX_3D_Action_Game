@@ -430,3 +430,42 @@ void Graphics::DrawString(const std::wstring& text, float x, float y, float size
         pBrush.Get()
     );
 }
+
+void Graphics::DrawRect(float x, float y, float w, float h, uint32_t color)
+{
+    if (!pD2DRenderTarget) return;
+
+    // F‚Ì•ÏŠ· (0xAARRGGBB -> D2D1_COLOR_F)
+    float a = ((color >> 24) & 0xFF) / 255.0f;
+    float r = ((color >> 16) & 0xFF) / 255.0f;
+    float g = ((color >> 8) & 0xFF) / 255.0f;
+    float b = ((color) & 0xFF) / 255.0f;
+
+    ID2D1SolidColorBrush* pBrush = nullptr;
+    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &pBrush);
+
+    if (pBrush) {
+        D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
+        pD2DRenderTarget->DrawRectangle(rect, pBrush, 2.0f); // ü•2.0
+        pBrush->Release();
+    }
+}
+
+void Graphics::FillRect(float x, float y, float w, float h, uint32_t color)
+{
+    if (!pD2DRenderTarget) return;
+
+    float a = ((color >> 24) & 0xFF) / 255.0f;
+    float r = ((color >> 16) & 0xFF) / 255.0f;
+    float g = ((color >> 8) & 0xFF) / 255.0f;
+    float b = ((color) & 0xFF) / 255.0f;
+
+    ID2D1SolidColorBrush* pBrush = nullptr;
+    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &pBrush);
+
+    if (pBrush) {
+        D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
+        pD2DRenderTarget->FillRectangle(rect, pBrush);
+        pBrush->Release();
+    }
+}

@@ -14,9 +14,9 @@
 #include "ECS/Components/AttackSphereComponent.h"
 #include "ECS/Components/RecoverySphereComponent.h"
 #include "ECS/Components/StatusComponent.h"
-
+#include "ECS/Components/BulletComponent.h"
 #include "Game/EntityFactory.h"
-//#include "App/Game.h"
+#include "App/Game.h"
 #include <DirectXMath.h>
 
 using namespace DirectX;
@@ -43,7 +43,7 @@ void ActionSystem::Update(float dt) {
             if (box.lifeTime <= 0.0f) pWorld->DestroyEntity(id);
         }
     }
-    // ★追加: 攻撃球の更新 (広げる＆寿命)
+    // 攻撃球の更新 (広げる＆寿命)
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (registry->HasComponent<AttackSphereComponent>(id)) {
             auto& sphere = registry->GetComponent<AttackSphereComponent>(id);
@@ -62,81 +62,179 @@ void ActionSystem::Update(float dt) {
         }
     }
 
-    // ★追加: 回復球の更新
+    // ---------------------------------------------------------
+    // 2. ★修正: 設置型回復スポット (エネルギータンク方式)
+    // ---------------------------------------------------------
+    EntityID playerID = ECSConfig::INVALID_ID;
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (registry->HasComponent<RecoverySphereComponent>(id)) {
-            auto& sphere = registry->GetComponent<RecoverySphereComponent>(id);
-            sphere.lifeTime -= dt;
-            sphere.currentRadius += sphere.expansionSpeed * dt;
-            if (sphere.currentRadius > sphere.maxRadius) sphere.currentRadius = sphere.maxRadius;
-            // ★追加: スケール同期
-            if (registry->HasComponent<TransformComponent>(id)) {
-                auto& trans = registry->GetComponent<TransformComponent>(id);
-                trans.scale = { sphere.currentRadius, sphere.currentRadius, sphere.currentRadius };
+        if (registry->HasComponent<PlayerComponent>(id)) {
+            if (registry->GetComponent<PlayerComponent>(id).isActive) {
+                playerID = id;
+                break;
             }
-            if (sphere.lifeTime <= 0.0f) pWorld->DestroyEntity(id);
         }
     }
 
-    //プレイヤーの入力処理
+    // プレイヤーがいて、かつ回復スポットがある場合
+    if (playerID != ECSConfig::INVALID_ID) {
+        auto& pTrans = registry->GetComponent<TransformComponent>(playerID);
+
+        // 全エンティティから回復スポットを探す
+        for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+            if (!registry->HasComponent<RecoverySphereComponent>(id)) continue;
+
+            auto& sphere = registry->GetComponent<RecoverySphereComponent>(id);
+            if (!registry->HasComponent<TransformComponent>(id)) continue;
+            auto& sTrans = registry->GetComponent<TransformComponent>(id);
+
+            // 無効または空なら処理しない
+            if (!sphere.isActive || sphere.capacity <= 0) {
+                // 見た目を消す (スケール0)
+                sTrans.scale = { 0.0f, 0.0f, 0.0f };
+                continue;
+            }
+
+            // 演出: クルクル回す
+            sphere.rotationAngle += 2.0f * dt;
+            sTrans.rotation.y = sphere.rotationAngle;
+
+            // 距離判定 (XZ平面)
+            float dx = pTrans.position.x - sTrans.position.x;
+            float dz = pTrans.position.z - sTrans.position.z;
+            float distSq = dx * dx + dz * dz;
+            float hitR = 1.0f + sphere.radius;
+
+            if (distSq < hitR * hitR) {
+                // 範囲内にいる
+                if (registry->HasComponent<StatusComponent>(playerID)) {
+                    auto& status = registry->GetComponent<StatusComponent>(playerID);
+
+                    // 「HPが減っている」かつ「タンクに残量がある」なら回復
+                    if (status.hp < status.maxHp && sphere.capacity > 0) {
+
+                        // 1フレームあたりの回復量 (※dt依存にせず固定値で少しずつ回復)
+                        int healRate = 1;
+
+                        // 残量チェック
+                        if (sphere.capacity < healRate) healRate = sphere.capacity;
+
+                        // 回復実行
+                        status.hp += healRate;
+                        if (status.hp > status.maxHp) status.hp = status.maxHp;
+
+                        // タンク消費
+                        sphere.capacity -= healRate;
+
+                        // 回復エフェクト音 (連続再生しすぎないように制御が必要だが簡易的に)
+                        // if (Game::GetInstance()->GetAudio()) Game::GetInstance()->GetAudio()->Play("SE_HEAL");
+                    }
+                }
+            }
+
+            // 使い切ったら非表示
+            if (sphere.capacity <= 0) {
+                sphere.isActive = false;
+                AppLog::AddLog("Energy Cell Depleted.");
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+     // 3. プレイヤー入力 (攻撃)
+     // ---------------------------------------------------------
+    if (playerID != ECSConfig::INVALID_ID) {
+        if (registry->HasComponent<PlayerComponent>(playerID) &&
+            registry->HasComponent<ActionComponent>(playerID))
+        {
+            auto& player = registry->GetComponent<PlayerComponent>(playerID);
+            auto& action = registry->GetComponent<ActionComponent>(playerID);
+            auto& trans = registry->GetComponent<TransformComponent>(playerID);
+
+            if (player.isActive) {
+                // クールタイム減少
+                if (action.cooldownTimer > 0.0f) {
+                    action.cooldownTimer -= dt;
+                }
+
+                // 左クリックで攻撃
+                if (input->IsMouseKeyDown(0) && action.cooldownTimer <= 0.0f) {
+                    action.isAttacking = true;
+                    action.cooldownTimer = action.attackCooldown;
+
+                    // 攻撃発生位置
+                    float angle = trans.rotation.y;
+                    float dist = 2.0f;
+                    XMFLOAT3 spawnPos = {
+                        trans.position.x + sinf(angle) * dist,
+                        trans.position.y + 0.5f,
+                        trans.position.z + cosf(angle) * dist
+                    };
+
+                    int dmg = 10;
+                    if (registry->HasComponent<StatusComponent>(playerID)) {
+                        dmg = registry->GetComponent<StatusComponent>(playerID).attackPower;
+                    }
+
+                    // 攻撃生成
+                    EntityFactory::CreateAttackSphere(pWorld, playerID, spawnPos, dmg);
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 4. ★追加: 敵の弾 (Bullet) の更新と当たり判定
+    // ---------------------------------------------------------
+
+    // プレイヤーの位置を取得 (判定用)
+    EntityID activePlayerID = ECSConfig::INVALID_ID;
+    XMFLOAT3 pPos = { 0,0,0 };
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        //必要なエンティティを持っているか
-        if (!registry->HasComponent<PlayerComponent>(id)) continue;
-        if (!registry->HasComponent<ActionComponent>(id)) continue;
+        if (registry->HasComponent<PlayerComponent>(id) &&
+            registry->GetComponent<PlayerComponent>(id).isActive) {
+            activePlayerID = id;
+            pPos = registry->GetComponent<TransformComponent>(id).position;
+            break;
+        }
+    }
 
-        auto& player = registry->GetComponent<PlayerComponent>(id);
-        auto& action = registry->GetComponent<ActionComponent>(id);
-        auto& trans = registry->GetComponent<TransformComponent>(id);
+    // 弾のループ
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (!registry->HasComponent<BulletComponent>(id)) continue;
 
-        //走査中のキャラでなければスキップ
-        if (!player.isActive) continue;
+        auto& bullet = registry->GetComponent<BulletComponent>(id);
 
-        //クールタイムを減らす
-        if (action.cooldownTimer > 0.0f) {
-            action.cooldownTimer -= dt;
+        // 1. 寿命管理
+        bullet.lifeTime -= dt;
+        if (bullet.lifeTime <= 0.0f) {
+            pWorld->DestroyEntity(id);
+            continue;
         }
 
-        //左クリックで攻撃
-        if (input->IsMouseKeyDown(0) && action.cooldownTimer <= 0.0f) {
-            //攻撃開始
-            action.isAttacking = true;
-            action.cooldownTimer = action.attackCooldown;
+        // 2. プレイヤーとの当たり判定
+        if (activePlayerID != ECSConfig::INVALID_ID && bullet.isActive) {
+            if (!registry->HasComponent<TransformComponent>(id)) continue;
+            auto& bTrans = registry->GetComponent<TransformComponent>(id);
 
-            //攻撃判定の位置計算
-            //プレイヤーの向きに合わせて前方にオフセット
-            float angle = trans.rotation.y;
-            float dist = 3.0f;
-            //DirectX座標系：Zが奥、Xが右
-            //回転が0のときZ+を向いているなら
-            float offsetX = sinf(angle) * dist;
-            float offsetZ = cosf(angle) * dist;
+            // 距離チェック (弾は小さいので判定シビアに)
+            float dx = pPos.x - bTrans.position.x;
+            float dz = pPos.z - bTrans.position.z;
+            float dy = (pPos.y + 0.5f) - bTrans.position.y; // プレイヤーの中心あたり
+            float distSq = dx * dx + dy * dy + dz * dz;
 
-            XMFLOAT3 spawnPos = {
-                trans.position.x + offsetX,
-                trans.position.y + 0.5f,
-                trans.position.z + offsetZ
-            };
+            // プレイヤー半径(0.5) + 弾半径(0.3) = 0.8 -> 2乗して 0.64
+            if (distSq < 0.8f * 0.8f) {
+                // 命中！
+                if (registry->HasComponent<StatusComponent>(activePlayerID)) {
+                    auto& st = registry->GetComponent<StatusComponent>(activePlayerID);
+                    st.hp -= bullet.damage;
+                    AppLog::AddLog("Ouch! Hit by Bullet! Damage: %d", bullet.damage);
 
-            //攻撃判定サイズ
-            XMFLOAT3 size = { 3.0f, 3.0f, 3.0f };
-
-            // ★役割による分岐
-            if (registry->HasComponent<AttackerTag>(id)) {
-                // アタッカーなら攻撃
-                int dmg = 10;
-                // StatusComponentのチェックを追加（元コードに参照があったため）
-                if (registry->HasComponent<StatusComponent>(id)) {
-                    dmg = registry->GetComponent<StatusComponent>(id).attackPower;
+                    // 被弾音があればここで再生
                 }
-               // EntityFactory::CreateAttackHitbox(pWorld, id, spawnPos, size, dmg);
-                EntityFactory::CreateAttackSphere(pWorld, id, spawnPos, dmg);
-            }
-            else if (registry->HasComponent<HealerTag>(id)) {
-                // ヒーラーなら回復 (回復判定は少し大きめに 2.5倍)
-                int heal = 10; // 固定回復量
-                XMFLOAT3 healSize = { 5.0f, 5.0f, 5.0f };
-                //EntityFactory::CreateRecoveryHitbox(pWorld, id, spawnPos, healSize, heal);
-                EntityFactory::CreateRecoverySphere(pWorld, id, trans.position, heal);
+
+                // 弾消滅
+                pWorld->DestroyEntity(id);
             }
         }
     }

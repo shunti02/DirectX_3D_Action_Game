@@ -1,11 +1,13 @@
 #pragma once
 
 struct RecoverySphereComponent {
-    int ownerID = -1;
-    int healAmount = 0;
-    float lifeTime = 0.5f;
+    float radius;
+    int healAmount; // 1回あたりの回復量（または瞬時回復量）
+    bool isActive;
 
-    float currentRadius = 1.0f;
-    float maxRadius = 5.0f;
-    float expansionSpeed = 15.0f;
+    // ★追加: エネルギータンク方式用の容量
+    int capacity;
+
+    // 回転演出用
+    float rotationAngle = 0.0f;
 };

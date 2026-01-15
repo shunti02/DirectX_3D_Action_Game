@@ -1,6 +1,7 @@
 #include "Engine/Input.h"
 
-void Input::Initialize() {
+void Input::Initialize(HWND hWnd) {
+    m_hWnd = hWnd;
     currentKeys.fill(false);
     previousKeys.fill(false);
 }
@@ -12,7 +13,7 @@ void Input::Update() {
         currentKeys[i] = (GetAsyncKeyState(i) & 0x8000) != 0;
     }
 }
-
+// --- キーボード実装 ---
 bool Input::IsKey(int key) const {
     return currentKeys[key];
 }
@@ -34,6 +35,11 @@ int GetMouseVK(int button) {
     }
 }
 
+bool Input::IsMouseKey(int button) const {
+    int key = GetMouseVK(button);
+    return IsKey(key);
+}
+
 bool Input::IsMouseKeyDown(int button) const {
     int key = GetMouseVK(button);
     return IsKeyDown(key);
@@ -42,4 +48,12 @@ bool Input::IsMouseKeyDown(int button) const {
 bool Input::IsMouseKeyUp(int button) const {
     int key = GetMouseVK(button);
     return IsKeyUp(key);
+}
+
+// ---追加: マウス座標取得の実装 ---
+DirectX::XMFLOAT2 Input::GetMousePosition() const {
+    POINT pos;
+    GetCursorPos(&pos); // スクリーン座標を取得
+    ScreenToClient(m_hWnd, &pos); // ウィンドウ内座標に変換
+    return DirectX::XMFLOAT2((float)pos.x, (float)pos.y);
 }

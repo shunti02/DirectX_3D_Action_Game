@@ -52,6 +52,10 @@ public:
     void EndDraw2D();
 	// 文字列描画
     void DrawString(const std::wstring& text, float x, float y, float size, uint32_t color);
+    // ★追加: 図形描画用
+    void DrawRect(float x, float y, float w, float h, uint32_t color); // 枠線
+    void FillRect(float x, float y, float w, float h, uint32_t color); // 塗りつぶし
+
     // 内部ヘルパー: シェーダーコンパイル
     bool CompileShaderFromFile(const std::wstring& filename, const std::string& entryPoint, const std::string& shaderModel, ID3DBlob** ppBlobOut);
 

@@ -58,6 +58,33 @@ void PlayerSystem::Update(float dt) {
         auto& trans = registry->GetComponent<TransformComponent>(id);
         auto& player = registry->GetComponent<PlayerComponent>(id);
 
+        // =========================================================
+        // ★追加: 落下判定とリスポーン
+        // =========================================================
+        // アクティブなキャラが落ちた場合
+        if (player.isActive && trans.position.y < -20.0f) {
+
+            AppLog::AddLog("Player Fell! Respawning at Start Point...");
+
+            // 1. ダメージペナルティ (最大HPの10%)
+            if (registry->HasComponent<StatusComponent>(id)) {
+                auto& st = registry->GetComponent<StatusComponent>(id);
+                int dmg = st.maxHp / 10;
+                if (dmg < 10) dmg = 10;
+                st.hp -= dmg;
+                // 死んだらGameSceneの判定に任せる
+            }
+
+            // 2. 座標リセット (スタート地点=回復地点へ)
+            trans.position = { 0.0f, 0.0f, 0.0f };
+
+            // 3. 物理速度リセット (重要)
+            player.velocity = { 0.0f, 0.0f, 0.0f };
+
+            // 処理後はcontinueしてこのフレームの移動計算をスキップ
+            continue;
+        }
+
         bool isDead = false;
         if (registry->HasComponent<StatusComponent>(id)) {
             if (registry->GetComponent<StatusComponent>(id).hp <= 0) isDead = true;

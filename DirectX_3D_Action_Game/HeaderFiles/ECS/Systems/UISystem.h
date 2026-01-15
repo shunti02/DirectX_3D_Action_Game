@@ -10,6 +10,7 @@ class Graphics;
 
 class UISystem : public System {
 public:
+	void Init(World* world) override;
 	void Update(float dt) override;
 	//Direct2D‚É‚æ‚é•`‰æ
 	void Draw(Graphics* pGraphics);

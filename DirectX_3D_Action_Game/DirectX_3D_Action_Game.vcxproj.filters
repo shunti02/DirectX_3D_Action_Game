@@ -135,6 +135,12 @@
     <ClCompile Include="SourceFiles\Engine\SkyBox.cpp">
       <Filter>SourceFiles\Engine</Filter>
     </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\CharacterSelectScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\StageSelectScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HeaderFiles\Engine\Graphics.h">
@@ -289,6 +295,18 @@
     </ClInclude>
     <ClInclude Include="HeaderFiles\Engine\SkyBox.h">
       <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\CharacterSelectScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\StageSelectScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\BulletComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\PhysicsComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

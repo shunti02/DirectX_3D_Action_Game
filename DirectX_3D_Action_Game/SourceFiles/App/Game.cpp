@@ -22,7 +22,8 @@ Game::~Game() {
 }
 
 bool Game::Initialize(HWND hWnd) {
-    pInput->Initialize();
+    m_hWnd = hWnd;
+    pInput->Initialize(hWnd);
     // Graphics‰Šú‰»
     pGraphics = std::make_unique<Graphics>();
     if (!pGraphics->Initialize(hWnd, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT)) {
