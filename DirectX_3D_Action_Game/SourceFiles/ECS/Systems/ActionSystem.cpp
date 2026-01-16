@@ -183,59 +183,21 @@ void ActionSystem::Update(float dt) {
     }
 
     // ---------------------------------------------------------
-    // 4. ★追加: 敵の弾 (Bullet) の更新と当たり判定
-    // ---------------------------------------------------------
+     // 4.敵の弾 (Bullet) の更新
+     // ---------------------------------------------------------
+     // プレイヤーの位置取得などは不要になったので削除してOK
 
-    // プレイヤーの位置を取得 (判定用)
-    EntityID activePlayerID = ECSConfig::INVALID_ID;
-    XMFLOAT3 pPos = { 0,0,0 };
-    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (registry->HasComponent<PlayerComponent>(id) &&
-            registry->GetComponent<PlayerComponent>(id).isActive) {
-            activePlayerID = id;
-            pPos = registry->GetComponent<TransformComponent>(id).position;
-            break;
-        }
-    }
-
-    // 弾のループ
+     // 弾のループ
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (!registry->HasComponent<BulletComponent>(id)) continue;
 
         auto& bullet = registry->GetComponent<BulletComponent>(id);
 
-        // 1. 寿命管理
+        // 1. 寿命管理のみ行う
         bullet.lifeTime -= dt;
         if (bullet.lifeTime <= 0.0f) {
             pWorld->DestroyEntity(id);
             continue;
-        }
-
-        // 2. プレイヤーとの当たり判定
-        if (activePlayerID != ECSConfig::INVALID_ID && bullet.isActive) {
-            if (!registry->HasComponent<TransformComponent>(id)) continue;
-            auto& bTrans = registry->GetComponent<TransformComponent>(id);
-
-            // 距離チェック (弾は小さいので判定シビアに)
-            float dx = pPos.x - bTrans.position.x;
-            float dz = pPos.z - bTrans.position.z;
-            float dy = (pPos.y + 0.5f) - bTrans.position.y; // プレイヤーの中心あたり
-            float distSq = dx * dx + dy * dy + dz * dz;
-
-            // プレイヤー半径(0.5) + 弾半径(0.3) = 0.8 -> 2乗して 0.64
-            if (distSq < 0.8f * 0.8f) {
-                // 命中！
-                if (registry->HasComponent<StatusComponent>(activePlayerID)) {
-                    auto& st = registry->GetComponent<StatusComponent>(activePlayerID);
-                    st.hp -= bullet.damage;
-                    AppLog::AddLog("Ouch! Hit by Bullet! Damage: %d", bullet.damage);
-
-                    // 被弾音があればここで再生
-                }
-
-                // 弾消滅
-                pWorld->DestroyEntity(id);
-            }
         }
     }
 }

@@ -7,6 +7,8 @@
 #include "Scene/GameScene.h"
 #include "Scene/TitleScene.h"
 #include "../ImGui/imgui.h"
+#include <fstream> // ファイル読み書き用
+#include <string>
 
 Game* Game::instance = nullptr;
 
@@ -101,4 +103,40 @@ void Game::Shutdown() {
     pSceneManager.reset();
     pAudio.reset();
     pGraphics.reset();
+}
+
+// ★追加: セーブ機能
+void Game::SaveGame() {
+    // 単純なテキストファイルに「解放済みステージ数」を書き込む
+    std::ofstream file("savedata.txt");
+    if (file.is_open()) {
+        file << m_maxUnlockedStage; // 現在の到達ステージを保存
+        file.close();
+        // AppLog::AddLog("Game Saved: MaxStage %d", m_maxUnlockedStage);
+    }
+}
+
+// ★追加: ロード機能
+bool Game::LoadGame() {
+    std::ifstream file("savedata.txt");
+    if (file.is_open()) {
+        file >> m_maxUnlockedStage;
+
+        // 安全対策: 範囲チェック
+        if (m_maxUnlockedStage < 1) m_maxUnlockedStage = 1;
+        if (m_maxUnlockedStage > 5) m_maxUnlockedStage = 5;
+
+        file.close();
+        return true; // ロード成功
+    }
+    return false; // ファイルがない（初回プレイなど）
+}
+
+// ★追加: リセット機能 (NEW GAME)
+void Game::ResetGame() {
+    m_maxUnlockedStage = 1;
+    m_currentStage = 1;
+    m_currentPhase = 1;
+    m_savedPlayerHP = -1;
+    SaveGame(); // リセットした状態を保存
 }

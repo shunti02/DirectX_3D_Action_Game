@@ -33,12 +33,27 @@ void EnemySystem::Update(float dt) {
 
         auto& enemy = registry->GetComponent<EnemyComponent>(id);
         auto& trans = registry->GetComponent<TransformComponent>(id);
-        //// ★追加: 遠距離タイプ判定 (簡易的にHPが高い敵を遠距離タイプにする)
-        //if (registry->HasComponent<StatusComponent>(id)) {
-        //    if (registry->GetComponent<StatusComponent>(id).maxHp > 50) {
-        //        enemy.isRanged = true;
-        //    }
-        //}
+        // ---------------------------------------------------------
+         // ★追加: ノックバック中の処理
+         // ---------------------------------------------------------
+        if (enemy.knockbackTimer > 0.0f) {
+            enemy.knockbackTimer -= dt;
+
+            // 物理挙動による移動は PhysicsSystem が行うのでここでは座標を直接いじらない。
+            // ただし、地面にいるなら摩擦で減速させる
+            if (registry->HasComponent<PhysicsComponent>(id)) {
+                auto& phy = registry->GetComponent<PhysicsComponent>(id);
+
+                // Y軸速度がほぼ0 (接地中) なら減速
+                if (std::abs(phy.velocity.y) < 0.1f) {
+                    phy.velocity.x *= 0.9f; // 摩擦 (90%に減速)
+                    phy.velocity.z *= 0.9f;
+                }
+            }
+
+            // ノックバック中はAI処理（追跡・攻撃）をスキップして次の敵へ
+            continue;
+        }
         // ---------------------------------------------------------
         // ターゲット（生存している最寄りのプレイヤー）を探す
         // ---------------------------------------------------------
@@ -135,6 +150,19 @@ void EnemySystem::Update(float dt) {
                 EntityFactory::CreateAttackSphere(pWorld, id, trans.position, dmg);
             }
             else {
+                // ---------------------------------------------------------
+                // ★修正: 不動属性（ラスボス）なら移動処理をスキップ
+                // ---------------------------------------------------------
+                if (enemy.isImmovable) {
+                    // ターゲットの方を向くだけ
+                    if (targetID != ECSConfig::INVALID_ID) {
+                        XMVECTOR dir = XMVector3Normalize(targetPos - enemyPos);
+                        float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
+                        trans.rotation.y = angle;
+                    }
+                    // 移動処理を抜ける（switchも抜ける）
+                    break;
+                }
                 // --- 移動処理 ---
                 float currentSpeed = enemy.moveSpeed;
 

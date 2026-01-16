@@ -64,6 +64,11 @@ public:
     void SetSavedHP(int hp) { m_savedPlayerHP = hp; }
     int GetSavedHP() const { return m_savedPlayerHP; }
 
+    // ★追加: セーブ・ロード機能
+    void SaveGame();
+    bool LoadGame(); // ロード成功ならtrue
+    void ResetGame(); // NEW GAME用
+
 private:
     static Game* instance; // シングルトンインスタンス
     HWND m_hWnd = nullptr; // ウィンドウハンドル

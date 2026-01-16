@@ -2,6 +2,7 @@
 #include "Scene/GameScene.h"
 #include "Scene/TitleScene.h"
 #include "Scene/CharacterSelectScene.h"
+#include "Scene/StageSelectScene.h"
 #include "App/Main.h"
 #include "App/Game.h"
 #include "Engine/Input.h"
@@ -45,6 +46,11 @@ void ResultScene::Update(float dt) {
     prevMx = mx;
     prevMy = my;
 
+    // ★修正: メニュー項目数を状況によって変える
+     // クリア時: [0:NEXT STAGE] [1:STAGE SELECT] [2:TITLE] (3つ)
+     // 失敗時:   [0:RETRY] [1:TITLE] (2つ)
+    int maxItems = isClear ? 3 : 2;
+
     // UI配置定義
     const float START_X = 400.0f;
     const float START_Y = 400.0f;
@@ -55,31 +61,27 @@ void ResultScene::Update(float dt) {
     // ---------------------------------------------------------
     // 1. マウス操作 (動いた時のみ判定)
     // ---------------------------------------------------------
-    // 左クリック決定は常に有効
     if (input->IsMouseKeyDown(0)) {
-        // クリックされた位置が項目の上なら決定
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < maxItems; ++i) { // 3ではなくmaxItemsを使用
             float itemY = START_Y + (i * ITEM_H);
             if (mx >= START_X && mx <= START_X + HIT_W &&
                 my >= itemY && my <= itemY + HIT_H)
             {
-                m_selectIndex = i; // 念のため選択も合わせる
+                m_selectIndex = i;
                 decided = true;
                 break;
             }
         }
     }
 
-    // カーソル移動 (マウスが動いた時だけ)
     if (isMouseMoved && !decided) {
-        for (int i = 0; i < 3; ++i) {
+        for (int i = 0; i < maxItems; ++i) { // 3ではなくmaxItemsを使用
             float itemY = START_Y + (i * ITEM_H);
             if (mx >= START_X && mx <= START_X + HIT_W &&
                 my >= itemY && my <= itemY + HIT_H)
             {
                 if (m_selectIndex != i) {
                     m_selectIndex = i;
-                    // if (auto audio = ...) audio->Play("SE_SWITCH");
                 }
             }
         }
@@ -91,12 +93,11 @@ void ResultScene::Update(float dt) {
     if (!decided) {
         if (input->IsKeyDown('W') || input->IsKeyDown(VK_UP)) {
             m_selectIndex--;
-            if (m_selectIndex < 0) m_selectIndex = 2;
-            // キー操作時はカーソル音を鳴らすなどの処理を入れると良い
+            if (m_selectIndex < 0) m_selectIndex = maxItems - 1; // ループ
         }
         if (input->IsKeyDown('S') || input->IsKeyDown(VK_DOWN)) {
             m_selectIndex++;
-            if (m_selectIndex > 2) m_selectIndex = 0;
+            if (m_selectIndex >= maxItems) m_selectIndex = 0; // ループ
         }
         if (input->IsKeyDown(VK_RETURN) || input->IsKeyDown(VK_SPACE)) {
             decided = true;
@@ -104,35 +105,59 @@ void ResultScene::Update(float dt) {
     }
 
     // ---------------------------------------------------------
-    // 3. 決定時の遷移 (変更なし)
+    // 3. 決定時の遷移
     // ---------------------------------------------------------
     if (decided) {
         if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
 
-        switch (m_selectIndex) {
-        case 0: // RETRY
-            // ★追加: リトライ時はステージの最初(フェーズ1)に戻し、HPも全快にする
-            Game::GetInstance()->SetCurrentPhase(1);
-            Game::GetInstance()->SetSavedHP(-1); // -1を指定すると全快スタートになる仕様
-
-            Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
+        if (isClear) {
+            // ==========================================
+            // ★GAME CLEAR時のメニュー処理
+            // ==========================================
+            switch (m_selectIndex) {
+            case 0: // NEXT STAGE
+            {
+                int current = Game::GetInstance()->GetCurrentStage();
+                // ステージ5未満なら次へ、5ならタイトルへ
+                if (current < 5) {
+                    Game::GetInstance()->SetCurrentStage(current + 1);
+                    Game::GetInstance()->SetCurrentPhase(1);
+                    Game::GetInstance()->SetSavedHP(-1); // 全快で開始
+                    Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
+                }
+                else {
+                    // 全クリ後の挙動 (エンディングがないのでタイトルへ)
+                    Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
+                }
+            }
             break;
 
-        case 1: // CUSTOMIZE
-            // キャラ選択へ戻る (ここでも一応リセットしておくと安全です)
-            Game::GetInstance()->SetCurrentPhase(1);
-            Game::GetInstance()->SetSavedHP(-1);
+            case 1: // STAGE SELECT (キャラ選択へ戻る)
+                Game::GetInstance()->SetCurrentPhase(1);
+                Game::GetInstance()->SetSavedHP(-1);
+                Game::GetInstance()->GetSceneManager()->ChangeScene<StageSelectScene>();
+                break;
 
-            Game::GetInstance()->GetSceneManager()->ChangeScene<CharacterSelectScene>();
-            break;
+            case 2: // TITLE
+                Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
+                break;
+            }
+        }
+        else {
+            // ==========================================
+            // ★GAME OVER時のメニュー処理
+            // ==========================================
+            switch (m_selectIndex) {
+            case 0: // RETRY (同じステージの最初から)
+                Game::GetInstance()->SetCurrentPhase(1);
+                Game::GetInstance()->SetSavedHP(-1); // 全快でリトライ
+                Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
+                break;
 
-        case 2: // TITLE
-            // タイトルへ (ここもリセット推奨)
-            Game::GetInstance()->SetCurrentPhase(1);
-            Game::GetInstance()->SetSavedHP(-1);
-
-            Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
-            break;
+            case 1: // TITLE
+                Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
+                break;
+            }
         }
     }
 }
@@ -155,20 +180,37 @@ void ResultScene::Draw() {
         pGraphics->DrawString(L"System Critical...", 450.0f, 250.0f, 32.0f, 0xFFAAAAAA);
     }
 
-    //メニュー選択肢
-    const wchar_t* items[] = { L"RETRY MISSION", L"CUSTOMIZE SUIT", L"RETURN TO TITLE" };
+    // ★メニュー選択肢の描画 (分岐)
     float startY = 400.0f;
 
-    for (int i = 0; i < 3; ++i) {
-        bool isSelected = (m_selectIndex == i);
-        uint32_t color = isSelected ? 0xFFFFFF00 : 0xFF808080;
-        float size = isSelected ? 40.0f : 32.0f;
-        float x = 400.0f + (isSelected ? 20.0f : 0.0f);
+    if (isClear) {
+        // --- クリア時 (3項目) ---
+        const wchar_t* items[] = { L"NEXT STAGE", L"STAGE SELECT", L"RETURN TO TITLE" };
+        for (int i = 0; i < 3; ++i) {
+            bool isSelected = (m_selectIndex == i);
+            uint32_t color = isSelected ? 0xFFFFFF00 : 0xFF808080;
+            float size = isSelected ? 40.0f : 32.0f;
+            float x = 400.0f + (isSelected ? 20.0f : 0.0f);
 
-        pGraphics->DrawString(items[i], x, startY + (i * 60.0f), size, color);
+            pGraphics->DrawString(items[i], x, startY + (i * 60.0f), size, color);
+            if (isSelected) {
+                pGraphics->DrawString(L"→", x - 40.0f, startY + (i * 60.0f), size, 0xFFFF0000);
+            }
+        }
+    }
+    else {
+        // --- 失敗時 (2項目) ---
+        const wchar_t* items[] = { L"RETRY MISSION", L"RETURN TO TITLE" };
+        for (int i = 0; i < 2; ++i) {
+            bool isSelected = (m_selectIndex == i);
+            uint32_t color = isSelected ? 0xFFFFFF00 : 0xFF808080;
+            float size = isSelected ? 40.0f : 32.0f;
+            float x = 400.0f + (isSelected ? 20.0f : 0.0f);
 
-        if (isSelected) {
-            pGraphics->DrawString(L"→", x - 40.0f, startY + (i * 60.0f), size, 0xFFFF0000);
+            pGraphics->DrawString(items[i], x, startY + (i * 60.0f), size, color);
+            if (isSelected) {
+                pGraphics->DrawString(L"→", x - 40.0f, startY + (i * 60.0f), size, 0xFFFF0000);
+            }
         }
     }
 
