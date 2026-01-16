@@ -21,4 +21,7 @@ struct EnemyComponent {
     float attackCooldownTimer = 0.0f; // 射撃のクールダウン
     float attackInterval = 3.0f;      // 射撃間隔（秒）
 
+    float knockbackTimer = 0.0f;
+    float weight = 1.0f;       // 1.0が標準。大きいほど吹き飛びにくい
+    bool isImmovable = false;  // trueなら絶対に動かない（ラスボス用）
 };

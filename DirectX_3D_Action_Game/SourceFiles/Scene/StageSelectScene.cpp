@@ -1,5 +1,6 @@
 #include "Scene/StageSelectScene.h"
 #include "Scene/GameScene.h"
+#include "Scene/TitleScene.h"
 #include "App/Main.h"
 #include "Engine/Input.h"
 
@@ -66,6 +67,11 @@ void StageSelectScene::Update(float dt) {
         Game::GetInstance()->SetSavedHP(-1);
 
         Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
+    }
+    // --- キャンセル (タイトルへ戻る) ---
+    if (input->IsKeyDown(VK_BACK) || input->IsKeyDown(VK_ESCAPE)) {
+        if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_CANCEL"); // 音があれば
+        Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
     }
 }
 

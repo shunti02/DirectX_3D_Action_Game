@@ -129,7 +129,13 @@ void PlayerAnimationSystem::Update(float dt) {
         // ★修正: ジャンプ中は攻撃アニメーションを適用しない (!isJumping)
         if (isAttacking && !isJumping) {
             float t = parentAction.cooldownTimer / parentAction.attackCooldown; // 1.0 -> 0.0
+            // タイプ取得
+            PlayerType pType = parentPlayer.type;
 
+            // =================================================
+            // Type A: 袈裟斬り (既存)
+            // =================================================
+            if (pType == PlayerType::AssaultStriker) {
             // 1. 全身の動き (Body)
             float twistY = 0.0f; float leanX = 0.0f; float stepZ = 0.0f; float stepY = 0.0f;
 
@@ -231,6 +237,123 @@ void PlayerAnimationSystem::Update(float dt) {
             if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft) {
                 usePivot = true; pivotPos = pivotShoulderL;
                 if (t <= 0.4f && t > 0.15f) localRot = XMVectorSet(0, -0.8f, -0.9f, 0);
+            }
+        }
+        // =================================================
+            // Type B: ハンマー・スマッシュ (パワフルな縦振り)
+            // =================================================
+            else if (pType == PlayerType::BusterGuard) {
+                // 全身: 大きくのけぞって叩きつける
+                float leanX = 0.0f; float jumpY = 0.0f;
+
+                if (t > 0.5f) {
+                    // [溜め] 上体を反らす(-X回転) + 少し浮く
+                    float subT = (1.0f - t) / 0.5f;
+                    leanX = Lerp(0.0f, -0.5f, subT);
+                    jumpY = Lerp(0.0f, 0.5f, subT);
+                }
+                else if (t > 0.3f) {
+                    // [叩きつけ] 急激に前傾(+X回転) + 着地
+                    float subT = (0.5f - t) / 0.2f;
+                    leanX = Lerp(-0.5f, 0.8f, subT);
+                    jumpY = Lerp(0.5f, -0.2f, subT);
+                }
+                else {
+                    // [硬直] 戻る
+                    float subT = (0.3f - t) / 0.3f;
+                    leanX = Lerp(0.8f, 0.0f, subT);
+                    jumpY = Lerp(-0.2f, 0.0f, subT);
+                }
+                bodyRot = XMVectorAdd(bodyRot, XMVectorSet(leanX, 0, 0, 0));
+                bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, jumpY, 0, 0));
+
+                // 両腕: 万歳して振り下ろす
+                // 腕パーツすべてに適用
+                if (part.partType == PartType::ArmRight || part.partType == PartType::ArmLeft ||
+                    part.partType == PartType::ShoulderRight || part.partType == PartType::ShoulderLeft ||
+                    part.partType == PartType::HandRight || part.partType == PartType::HandLeft) {
+
+                    float rX = 0;
+                    if (t > 0.5f) {
+                        // 万歳 (後ろへ)
+                        float subT = (1.0f - t) / 0.5f;
+                        rX = Lerp(0.0f, -2.5f, subT);
+                    }
+                    else if (t > 0.3f) {
+                        // 振り下ろし (前へ)
+                        float subT = (0.5f - t) / 0.2f;
+                        rX = Lerp(-2.5f, 1.0f, subT);
+                    }
+                    else {
+                        // 戻る
+                        float subT = (0.3f - t) / 0.3f;
+                        rX = Lerp(1.0f, 0.0f, subT);
+                    }
+
+                    // 個別回転に追加
+                    localRot = XMVectorSet(rX, 0, 0, 0);
+                }
+            }
+            // =================================================
+            // Type C: プラズマ・スナイプ (射撃)
+            // =================================================
+            else if (pType == PlayerType::PlasmaSniper) {
+                // 全身: 構え -> 反動で後退 -> 戻る
+                float slideZ = 0.0f; float twistY = 0.0f;
+
+                if (t > 0.8f) {
+                    // [構え] 半身になる
+                    float subT = (1.0f - t) / 0.2f;
+                    twistY = Lerp(0.0f, -0.5f, subT);
+                }
+                else if (t > 0.6f) {
+                    // [発射] 反動で後ろへスライド + 上体反らし
+                    float subT = (0.8f - t) / 0.2f;
+                    twistY = -0.5f;
+                    slideZ = Lerp(0.0f, -0.8f, subT); // 後ろへスライド
+                    bodyRot = XMVectorAdd(bodyRot, XMVectorSet(-0.2f * subT, 0, 0, 0)); // 上体反らし(Recoil)
+                }
+                else {
+                    // [残心] ゆっくり戻る
+                    float subT = (0.6f - t) / 0.6f;
+                    twistY = Lerp(-0.5f, 0.0f, subT);
+                    slideZ = Lerp(-0.8f, 0.0f, subT);
+                }
+                bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, 0, slideZ, 0));
+                bodyRot = XMVectorAdd(bodyRot, XMVectorSet(0, twistY, 0, 0));
+
+                // 右腕: 前に突き出す (銃を構える)
+                if (part.partType == PartType::ArmRight || part.partType == PartType::ShoulderRight) {
+                    float rX = 0.0f;
+                    if (t > 0.8f) {
+                        float subT = (1.0f - t) / 0.2f;
+                        rX = Lerp(0.0f, -1.5f, subT); // 水平に上げる (90度)
+                    }
+                    else if (t > 0.6f) {
+                        // 発射瞬間に跳ね上がる
+                        float subT = (0.8f - t) / 0.2f;
+                        rX = Lerp(-1.5f, -1.8f, subT);
+                    }
+                    else {
+                        // 戻る
+                        float subT = (0.6f - t) / 0.6f;
+                        rX = Lerp(-1.8f, 0.0f, subT);
+                    }
+                    localRot = XMVectorSet(rX, 0, 0, 0);
+                }
+                // 左腕: 添えるだけ
+                if (part.partType == PartType::ArmLeft || part.partType == PartType::ShoulderLeft) {
+                    float rX = 0.0f; float rY = 0.0f;
+                    if (t > 0.6f) {
+                        rX = -0.5f; rY = 0.5f; // 胸元へ
+                    }
+                    else {
+                        float subT = (0.6f - t) / 0.6f;
+                        rX = Lerp(-0.5f, 0.0f, subT);
+                        rY = Lerp(0.5f, 0.0f, subT);
+                    }
+                    localRot = XMVectorSet(rX, rY, 0, 0);
+                }
             }
         }
         // --- D. ジャンプ: 万歳 (Jump) ---

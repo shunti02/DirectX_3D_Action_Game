@@ -3,6 +3,7 @@
 =====================================================================*/
 #pragma once
 #include "BaseScene.h"
+#include "SceneManager.h"
 #include "Engine/SkyBox.h"
 #include "ECS/Systems/UISystem.h"
 
@@ -22,4 +23,6 @@ private:
 
     // 文字の点滅用タイマー
     float blinkTimer = 0.0f;
+    // ★追加: 選択中のメニュー (0: NEW GAME, 1: CONTINUE)
+    int m_selectIndex = 0;
 };
