@@ -433,39 +433,52 @@ void Graphics::DrawString(const std::wstring& text, float x, float y, float size
 
 void Graphics::DrawRect(float x, float y, float w, float h, uint32_t color)
 {
+    // 変数名は pD2DRenderTarget (ComPtr)
     if (!pD2DRenderTarget) return;
 
-    // 色の変換 (0xAARRGGBB -> D2D1_COLOR_F)
+    // 色分解 (0xAARRGGBB -> r, g, b, a)
     float a = ((color >> 24) & 0xFF) / 255.0f;
     float r = ((color >> 16) & 0xFF) / 255.0f;
     float g = ((color >> 8) & 0xFF) / 255.0f;
-    float b = ((color) & 0xFF) / 255.0f;
+    float b = (color & 0xFF) / 255.0f;
 
-    ID2D1SolidColorBrush* pBrush = nullptr;
-    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &pBrush);
+    // ブラシ作成
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &brush);
 
-    if (pBrush) {
+    if (brush) {
         D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
-        pD2DRenderTarget->DrawRectangle(rect, pBrush, 2.0f); // 線幅2.0
-        pBrush->Release();
+        // FillRectangle = 中身を塗りつぶす
+        pD2DRenderTarget->FillRectangle(rect, brush.Get());
     }
 }
 
-void Graphics::FillRect(float x, float y, float w, float h, uint32_t color)
+// ---------------------------------------------------------
+// 矩形描画 (枠線のみ)
+// ---------------------------------------------------------
+void Graphics::DrawRectOutline(float x, float y, float w, float h, float thickness, uint32_t color)
 {
     if (!pD2DRenderTarget) return;
 
     float a = ((color >> 24) & 0xFF) / 255.0f;
     float r = ((color >> 16) & 0xFF) / 255.0f;
     float g = ((color >> 8) & 0xFF) / 255.0f;
-    float b = ((color) & 0xFF) / 255.0f;
+    float b = (color & 0xFF) / 255.0f;
 
-    ID2D1SolidColorBrush* pBrush = nullptr;
-    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &pBrush);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+    pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &brush);
 
-    if (pBrush) {
+    if (brush) {
         D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
-        pD2DRenderTarget->FillRectangle(rect, pBrush);
-        pBrush->Release();
+        // DrawRectangle = 枠線を描く
+        pD2DRenderTarget->DrawRectangle(rect, brush.Get(), thickness);
     }
+}
+
+// ※ FillRect は DrawRect (塗りつぶし) と同じ機能として実装する場合、
+//    以下のようにエイリアスにするか、削除して呼び出し側を修正する。
+//    今回は Graphics.h に宣言があるなら実装を残しておく。
+void Graphics::FillRect(float x, float y, float w, float h, uint32_t color)
+{
+    DrawRect(x, y, w, h, color);
 }

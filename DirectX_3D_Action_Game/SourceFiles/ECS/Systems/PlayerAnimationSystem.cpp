@@ -108,6 +108,41 @@ void PlayerAnimationSystem::Update(float dt) {
         if (!isDead) {
             float floatY = sinf(timeAccumulator * 2.0f) * 0.1f;
             bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, floatY, 0, 0));
+
+            if (!isAttacking && !isJumping && !isHurt) {
+
+                // ƒ^ƒCƒvŽæ“¾
+                PlayerType pType = parentPlayer.type;
+
+                // Šî–{Šp“x (Type A—p)
+                float armAngleR = -1.0f; // ‰E˜r (Z‰ñ“])
+                float armAngleL = 1.0f; // ¶˜r (Z‰ñ“])
+
+                // Type B (Œ¨•‚ªL‚¢‚Ì‚ÅA­‚µŠJ‚«‹C–¡‚É‚·‚é)
+                if (pType == PlayerType::BusterGuard) {
+                    armAngleR = -0.1f; // ‚ ‚Ü‚è•Â‚¶‚È‚¢
+                    armAngleL = 0.1f;
+                }
+                // Type C (×g‚È‚Ì‚ÅA­‚µ‹·‚ß‚é‚ªƒNƒƒX‚µ‚È‚¢’ö“x)
+                else if (pType == PlayerType::PlasmaSniper) {
+                    armAngleR = -0.1f;
+                    armAngleL = 0.1f;
+                }
+
+                // ‰E˜r
+                if (part.partType == PartType::ShoulderRight || part.partType == PartType::ArmRight || part.partType == PartType::HandRight) {
+                    usePivot = true; pivotPos = pivotShoulderR;
+                    float sway = sinf(timeAccumulator * 3.0f) * 0.05f;
+                    localRot = XMVectorSet(0, 0, armAngleR + sway, 0);
+                }
+
+                // ¶˜r
+                if (part.partType == PartType::ShoulderLeft || part.partType == PartType::ArmLeft || part.partType == PartType::HandLeft) {
+                    usePivot = true; pivotPos = pivotShoulderL;
+                    float sway = sinf(timeAccumulator * 3.0f + XM_PI) * 0.05f;
+                    localRot = XMVectorSet(0, 0, armAngleL + sway, 0);
+                }
+            }
         }
 
         // --- B. ˆÚ“®: is•ûŒü‚Ö‚ÌŒX‚« (Move) ---
@@ -125,7 +160,7 @@ void PlayerAnimationSystem::Update(float dt) {
             bodyRot = XMVectorAdd(bodyRot, XMVectorSet(tx, 0, tz, 0));
         }
 
-        // --- C. UŒ‚: ‰EŽèU‚è‰º‚ë‚µ (Attack) ---
+        // --- C. UŒ‚ ---
         // šC³: ƒWƒƒƒ“ƒv’†‚ÍUŒ‚ƒAƒjƒ[ƒVƒ‡ƒ“‚ð“K—p‚µ‚È‚¢ (!isJumping)
         if (isAttacking && !isJumping) {
             float t = parentAction.cooldownTimer / parentAction.attackCooldown; // 1.0 -> 0.0

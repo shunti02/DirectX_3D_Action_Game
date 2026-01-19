@@ -33,6 +33,12 @@
 
 void GameScene::Initialize() {
     // ---------------------------------------------------------
+    // ★追加: マウスカーソルを消す
+    // ---------------------------------------------------------
+    // ShowCursorは呼び出すたびにカウンタを増減させるため、
+    // 確実にマイナス(非表示)になるまでループして消します。
+    while (ShowCursor(FALSE) >= 0);
+    // ---------------------------------------------------------
     // 1. システム登録
     // ---------------------------------------------------------
     // 登録順序が重要です（Updateは登録順に実行されます）
@@ -119,13 +125,13 @@ void GameScene::Initialize() {
         speed = 4.0f;
         scale = 0.7f; // 少し大きい
         maxHp = 350;         // かなり硬い
-        attackPower = 25;    // 一撃が重い
+        attackPower = 250;    // 一撃が重い
         break;
     case PlayerType::PlasmaSniper:   // 緑：遠距離＆高速
         bodyColor = { 0.0f, 1.0f, 0.5f, 1.0f }; // Green
         speed = 7.5f;
         maxHp = 120;         // 脆い
-        attackPower = 12;    // 手数で勝負
+        attackPower = 120;    // 手数で勝負
         break;
     }
 
@@ -134,7 +140,8 @@ void GameScene::Initialize() {
         .type = "Player",
         .position = startPos,
         .scale = { scale, scale, scale },
-        .color = bodyColor
+        .color = bodyColor,
+        .playerType = selectedType
         });
 
     // コンポーネント詳細設定
@@ -609,6 +616,7 @@ void GameScene::CheckGameCondition() {
     if (alivePlayers == 0) {
         m_isSceneChanging = true;
         ResultScene::isClear = false;
+
         // 敗北時はリザルトへ (ステージ進行はリセットされる前提)
         Game::GetInstance()->GetSceneManager()->ChangeScene<ResultScene>();
         return;
@@ -642,4 +650,9 @@ void GameScene::CheckGameCondition() {
             Game::GetInstance()->GetSceneManager()->ChangeScene<ResultScene>();
         }
     }
+}
+void GameScene::Shutdown() {
+    // マウスカーソルを表示する
+    // 確実にプラス(表示)になるまでループして表示させます。
+    while (ShowCursor(TRUE) < 0);
 }

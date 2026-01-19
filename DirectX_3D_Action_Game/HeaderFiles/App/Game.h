@@ -86,4 +86,5 @@ private:
     int m_currentPhase = 1;       // 現在のフェーズ
     int m_maxUnlockedStage = 1;   // 解放済みステージ
     int m_savedPlayerHP = -1;     // フェーズ間のHP引き継ぎ (-1で全快)
+    int playerType = 0;
 };

@@ -20,7 +20,7 @@ public:
     void Initialize() override;
     void Update(float dt) override;
     void Draw() override;
-    void Shutdown() override {}
+    void Shutdown() override;
 private:
     // Ÿ”s”»’è‚ğs‚¤“à•”ŠÖ”
     void CheckGameCondition();

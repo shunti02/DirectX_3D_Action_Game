@@ -59,6 +59,8 @@ public:
     // 内部ヘルパー: シェーダーコンパイル
     bool CompileShaderFromFile(const std::wstring& filename, const std::string& entryPoint, const std::string& shaderModel, ID3DBlob** ppBlobOut);
 
+    // ★追加: 枠線描画
+    void DrawRectOutline(float x, float y, float w, float h, float thickness, uint32_t color);
 private:
     ComPtr<ID3D11Device> pDevice;
     ComPtr<ID3D11DeviceContext> pContext;
@@ -77,5 +79,6 @@ private:
 
     
     bool InitD2D(IDXGISwapChain* swapChain);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_pD2DSolidBrush;
 };
 #endif //GRAPHICS_H

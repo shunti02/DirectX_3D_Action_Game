@@ -15,6 +15,7 @@
 #include "App/Main.h"
 #include <format>
 #include <string>
+#include <cmath>
 
 // ワールド情報を保存
 void UISystem::Init(World* world) {
@@ -154,58 +155,129 @@ void UISystem::Draw(Graphics* pGraphics) {
         }
     }
 
+    // 時間経過による点滅用
+    static float time = 0.0f;
+    time += 0.016f; // 60fps想定の簡易加算
+
     // Direct2D 描画開始
     pGraphics->BeginDraw2D();
 
     float scW = (float)Config::SCREEN_WIDTH;
     float scH = (float)Config::SCREEN_HEIGHT;
 
-    // 1. 照準 (Reticle)
+    // =========================================================
+    // 1. ダメージ警告エフェクト (HP低下時)
+    // =========================================================
+    if (playerID != ECSConfig::INVALID_ID) {
+        auto& status = registry->GetComponent<StatusComponent>(playerID);
+        float hpRatio = (float)status.hp / (float)status.maxHp;
+
+        if (hpRatio < 0.3f) {
+            // HP30%以下で画面端を赤く点滅させる
+            float alpha = (sinf(time * 10.0f) + 1.0f) * 0.15f; // 0.0 ~ 0.3
+            uint32_t alertColor = (static_cast<uint32_t>(alpha * 255.0f) << 24) | 0x00FF0000;
+
+            // 画面全体を覆う赤矩形 (中央を抜くのはD2D標準では難しいので全体を薄く塗る)
+            pGraphics->DrawRect(0, 0, scW, scH, alertColor);
+
+            // "WARNING" 文字
+            if (fmodf(time, 1.0f) < 0.5f) {
+                pGraphics->DrawString(L"WARNING: HULL CRITICAL", scW / 2.0f - 150.0f, scH / 2.0f - 100.0f, 32.0f, 0xFFFF0000);
+            }
+        }
+    }
+
+    // =========================================================
+    // 1. レティクル (画面中央の照準)
+    // =========================================================
     float cx = scW / 2.0f;
     float cy = scH / 2.0f;
-    pGraphics->FillRect(cx - 15.0f, cy - 1.0f, 30.0f, 2.0f, 0x8800FF00); // 横
-    pGraphics->FillRect(cx - 1.0f, cy - 15.0f, 2.0f, 30.0f, 0x8800FF00); // 縦
-    pGraphics->FillRect(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, 0xFF00FF00);   // 点
+    uint32_t sightColor = 0xAA00FF00; // 半透明緑
 
+    // 十字を描く (DrawRect = 塗りつぶし)
+    pGraphics->DrawRect(cx - 15.0f, cy - 1.0f, 30.0f, 2.0f, sightColor); // 横棒
+    pGraphics->DrawRect(cx - 1.0f, cy - 15.0f, 2.0f, 30.0f, sightColor); // 縦棒
+
+    // 中心点 (赤)
+    pGraphics->DrawRect(cx - 2.0f, cy - 2.0f, 4.0f, 4.0f, 0xFFFF0000);
+
+    // 外側の括弧 [  ]
+    float bracketW = 40.0f;
+    float bracketH = 30.0f;
+    float gap = 10.0f + sinf(time * 2.0f) * 2.0f; // 呼吸するように動く
+
+    // 左括弧
+    pGraphics->DrawRect(cx - bracketW - gap, cy - bracketH, 2.0f, bracketH * 2, sightColor); // 縦
+    pGraphics->DrawRect(cx - bracketW - gap, cy - bracketH, 10.0f, 2.0f, sightColor); // 上横
+    pGraphics->DrawRect(cx - bracketW - gap, cy + bracketH, 10.0f, 2.0f, sightColor); // 下横
+
+    // 右括弧
+    pGraphics->DrawRect(cx + bracketW + gap, cy - bracketH, 2.0f, bracketH * 2, sightColor); // 縦
+    pGraphics->DrawRect(cx + bracketW + gap - 10.0f, cy - bracketH, 10.0f, 2.0f, sightColor); // 上横
+    pGraphics->DrawRect(cx + bracketW + gap - 10.0f, cy + bracketH, 10.0f, 2.0f, sightColor); // 下横
+    // =========================================================
     // 2. ステージ情報 (右上)
+    // =========================================================
     int stage = Game::GetInstance()->GetCurrentStage();
     std::wstring stageStr = L"STAGE: " + std::to_wstring(stage);
     std::wstring enemyStr = L"HOSTILES: " + std::to_wstring(enemyCount);
 
-    // 背景プレート
-    pGraphics->FillRect(scW - 300.0f, 20.0f, 280.0f, 80.0f, 0x88000000); // 半透明黒
-    pGraphics->DrawRect(scW - 300.0f, 20.0f, 280.0f, 80.0f, 0xFFFFFFFF); // 白枠
+    // 右上の情報パネル
+    float infoW = 300.0f;
+    float infoX = scW - infoW - 20.0f;
 
-    pGraphics->DrawString(stageStr.c_str(), scW - 280.0f, 30.0f, 24.0f, 0xFF00FFFF);
+    // パネル背景 (斜めカット風に見せるため、矩形を少しずらして重ねる技法)
+    pGraphics->DrawRect(infoX, 20.0f, infoW, 80.0f, 0xAA001133); // 紺色ベース
+    pGraphics->DrawRect(infoX, 20.0f, infoW, 2.0f, 0xFF00FFFF);  // 上ライン
+    pGraphics->DrawRect(infoX, 98.0f, infoW, 2.0f, 0xFF00FFFF);  // 下ライン
+
+    pGraphics->DrawString(stageStr.c_str(), infoX + 20.0f, 30.0f, 24.0f, 0xFF00FFFF);
     uint32_t eColor = (enemyCount > 0) ? 0xFFFF4444 : 0xFF00FF00;
-    pGraphics->DrawString(enemyStr.c_str(), scW - 280.0f, 60.0f, 28.0f, eColor);
+    pGraphics->DrawString(enemyStr.c_str(), infoX + 20.0f, 60.0f, 28.0f, eColor);
 
+    // =========================================================
     // 3. プレイヤーHPバー (左下)
+    // =========================================================
     if (playerID != ECSConfig::INVALID_ID) {
         auto& status = registry->GetComponent<StatusComponent>(playerID);
-        auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
+        // auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
 
         float barX = 50.0f;
         float barY = scH - 80.0f;
         float barW = 300.0f;
         float barH = 20.0f;
 
-        // 背景
-        pGraphics->FillRect(barX, barY, barW, barH, 0x88444444);
+        // ベースパネル
+        pGraphics->DrawRect(barX - 20, barY - 40, barW + 40, 70, 0x88000000);
+        // 装飾ライン (L字)
+        pGraphics->DrawRect(barX - 20, barY - 40, 2, 70, 0xFF00FFFF); // 左縦
+        pGraphics->DrawRect(barX - 20, barY + 30, 100, 2, 0xFF00FFFF); // 下横
 
-        // 中身
+        // --- HPゲージ ---
+        // 背景 (グリッド風に切れ目を入れる)
+        for (int i = 0; i < 10; ++i) {
+            pGraphics->DrawRect(barX + (i * (barW / 10.0f)), barY, (barW / 10.0f) - 2.0f, barH, 0xFF333333);
+        }
+
+        // 現在HP
         float ratio = (float)status.hp / (float)status.maxHp;
-        uint32_t hpColor = 0xFF0088FF;
-        if (ratio < 0.3f) hpColor = 0xFFFF0000;
-        else if (ratio < 0.6f) hpColor = 0xFFFFFF00;
-        pGraphics->FillRect(barX, barY, barW * ratio, barH, hpColor);
+        if (ratio < 0) ratio = 0;
 
-        // 枠
-        pGraphics->DrawRect(barX, barY, barW, barH, 0xFFFFFFFF);
+        uint32_t hpColor = 0xFF00FF00;
+        if (ratio < 0.3f) hpColor = 0xFFFF0000;
+        else if (ratio < 0.5f) hpColor = 0xFFFFFF00;
+
+        // ゲージ本体 (連続したバーではなく、ブロック状に塗る)
+        int blockCount = (int)(ratio * 10.0f);
+        if (blockCount == 0 && ratio > 0) blockCount = 1;
+
+        for (int i = 0; i < blockCount; ++i) {
+            pGraphics->DrawRect(barX + (i * (barW / 10.0f)), barY, (barW / 10.0f) - 2.0f, barH, hpColor);
+        }
 
         // テキスト
-        std::wstring hpText = L"ARMOR: " + std::to_wstring(status.hp);
-        pGraphics->DrawString(hpText.c_str(), barX, barY - 30.0f, 20.0f, 0xFFFFFFFF);
+        std::wstring hpText = L"SHIELD INTEGRITY: " + std::to_wstring((int)(ratio * 100)) + L"%";
+        pGraphics->DrawString(hpText.c_str(), barX, barY - 30.0f, 20.0f, hpColor);
     }
 
     pGraphics->EndDraw2D();

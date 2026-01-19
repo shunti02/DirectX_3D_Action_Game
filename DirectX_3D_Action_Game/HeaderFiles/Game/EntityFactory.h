@@ -47,7 +47,7 @@ struct EntitySpawnParams {
 	DirectX::XMFLOAT4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     PlayerRole role = PlayerRole::Attacker;
-
+    PlayerType playerType = PlayerType::AssaultStriker;
     // オプション（必要に応じて拡張）
     std::string name = "";      // デバッグ識別用など
 };
@@ -101,7 +101,7 @@ namespace EntityFactory {
         if (params.type == "Player") {
             world->AddComponent<MeshComponent>(id);
             world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<PlayerComponent>(id, PlayerComponent{ .moveSpeed = 5.0f });
+            world->AddComponent<PlayerComponent>(id, PlayerComponent{ .type = params.playerType,.moveSpeed = 5.0f });
             world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 100, .maxHp = 100, .attackPower = 5 });
             world->AddComponent<ActionComponent>(id, ActionComponent{ .attackCooldown = 2.0f, .duration = 0.5f });
             //役割タグ
@@ -123,7 +123,7 @@ namespace EntityFactory {
             // ----------------------------------------------------
             // ★プレイヤータイプに応じたモデル生成
             // ----------------------------------------------------
-            PlayerType currentType = Game::GetInstance()->GetPlayerType();
+            PlayerType currentType = params.playerType;
 
             // ====================================================
             // 2. 付属パーツの生成 (Head, Body, Arms...)
@@ -973,6 +973,37 @@ namespace EntityFactory {
         }
 
         DebugLog("Enemy Fired! ID: %d", id);
+    }
+    // ★追加: プレイヤーの弾を生成
+    inline void CreatePlayerBullet(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir, int damage) {
+        // 小さな発光する弾
+        EntityID id = world->CreateEntity()
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.4f, 0.4f, 0.8f} }) // 少し細長く
+            // 定義順: damage, lifeTime, isActive, fromPlayer
+            .AddComponent<BulletComponent>(BulletComponent{
+                .damage = damage,
+                .lifeTime = 3.0f,
+                .isActive = true,
+                .fromPlayer = true // ★重要: プレイヤーの弾
+                })
+            .Build();
+
+        world->AddComponent<MeshComponent>(id);
+        world->AddComponent<ColliderComponent>(id);
+
+        // 形は球か、カプセルっぽく見せるためにSphere
+        // 色はType Cに合わせてエメラルドグリーン
+        AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 0.0f, 1.0f, 0.8f, 1.0f }, ColliderType::Type_Sphere, 0.8f, 0.0f, 0.0f);
+
+        // 物理挙動 (高速で直進)
+        if (!world->GetRegistry()->HasComponent<PhysicsComponent>(id)) {
+            float speed = 25.0f; // 敵の弾より速く
+            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{
+                .velocity = { dir.x * speed, dir.y * speed, dir.z * speed },
+                .useGravity = false
+                });
+        }
+        DebugLog("Player Shot Fired! ID: %d", id);
     }
     // ★追加: ヒットエフェクト生成 (火花を散らす)
     inline void CreateHitEffect(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
