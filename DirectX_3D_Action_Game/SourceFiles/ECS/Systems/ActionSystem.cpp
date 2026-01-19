@@ -155,6 +155,10 @@ void ActionSystem::Update(float dt) {
                 if (action.cooldownTimer > 0.0f) {
                     action.cooldownTimer -= dt;
                 }
+                else {
+                    // クールダウンが終わったら攻撃モーションフラグを下ろす
+                    action.isAttacking = false;
+                }
 
                 // 左クリックで攻撃
                 if (input->IsMouseKeyDown(0) && action.cooldownTimer <= 0.0f) {
@@ -175,8 +179,62 @@ void ActionSystem::Update(float dt) {
                         dmg = registry->GetComponent<StatusComponent>(playerID).attackPower;
                     }
 
-                    // 攻撃生成
-                    EntityFactory::CreateAttackSphere(pWorld, playerID, spawnPos, dmg);
+                    // ----------------------------------------------------------------
+                     // ★修正: プレイヤータイプに応じて攻撃を変える
+                     // ----------------------------------------------------------------
+                    if (player.type == PlayerType::PlasmaSniper) {
+                        // === Type C: 弾を発射 (Plasma Bullet) ===
+
+                        // カメラの向きを取得（弾を飛ばす方向）
+                        XMVECTOR camDir = XMVectorSet(0, 0, 1, 0); // デフォルト前方
+
+                        // カメラエンティティを探して向きを取得
+                        for (EntityID camID = 0; camID < ECSConfig::MAX_ENTITIES; ++camID) {
+                            if (registry->HasComponent<CameraComponent>(camID)) {
+                                auto& cam = registry->GetComponent<CameraComponent>(camID);
+
+                                // ★修正: 上下(angleX)と左右(angleY)の両方を使って向きを決める
+                                // 行列を使って「真ん前(0,0,1)」をカメラの角度分だけ回転させる
+                                XMMATRIX camRot = XMMatrixRotationRollPitchYaw(cam.angleX, cam.angleY, 0.0f);
+                                camDir = XMVector3TransformCoord(XMVectorSet(0, 0, 1, 0), camRot);
+                                break;
+                            }
+                        }
+
+                        XMFLOAT3 spawnPos = trans.position;
+                        spawnPos.y += 1.0f; // 胸の高さ
+
+                        // 少し前に出す
+                        XMVECTOR posV = XMLoadFloat3(&spawnPos);
+                        posV += camDir * 1.5f;
+                        XMStoreFloat3(&spawnPos, posV);
+
+                        XMFLOAT3 dirF; XMStoreFloat3(&dirF, camDir);
+
+                        // 弾生成
+                        EntityFactory::CreatePlayerBullet(pWorld, spawnPos, dirF, dmg);
+
+                        // SE
+                        if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
+                    }
+                    else {
+                        // === Type A & B: 範囲攻撃 (Sphere) ===
+
+                        // 攻撃発生位置
+                        float angle = trans.rotation.y;
+                        float dist = 2.0f;
+                        XMFLOAT3 spawnPos = {
+                            trans.position.x + sinf(angle) * dist,
+                            trans.position.y + 0.5f,
+                            trans.position.z + cosf(angle) * dist
+                        };
+
+                        // 攻撃球生成
+                        EntityFactory::CreateAttackSphere(pWorld, playerID, spawnPos, dmg);
+
+                        // SE
+                        if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_JUMP");
+                    }
                 }
             }
         }

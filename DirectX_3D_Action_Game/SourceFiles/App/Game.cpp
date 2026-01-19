@@ -66,6 +66,7 @@ void Game::Update(float dt) {
     if (pSceneManager) {
         pSceneManager->Update(dt);
     }
+    pInput->ResetMouseWheel();
 }
 
 void Game::Draw() {
@@ -107,12 +108,14 @@ void Game::Shutdown() {
 
 // ★追加: セーブ機能
 void Game::SaveGame() {
-    // 単純なテキストファイルに「解放済みステージ数」を書き込む
     std::ofstream file("savedata.txt");
     if (file.is_open()) {
-        file << m_maxUnlockedStage; // 現在の到達ステージを保存
+        // 解放済みステージ数と、現在選択中のプレイヤータイプを保存
+        // (スペース区切りで書き込む)
+        file << m_maxUnlockedStage << " " << (int)m_selectedPlayerType;
+
         file.close();
-        // AppLog::AddLog("Game Saved: MaxStage %d", m_maxUnlockedStage);
+        AppLog::AddLog("[System] Game Saved. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
     }
 }
 
@@ -120,13 +123,26 @@ void Game::SaveGame() {
 bool Game::LoadGame() {
     std::ifstream file("savedata.txt");
     if (file.is_open()) {
-        file >> m_maxUnlockedStage;
+        int loadedType = 0;
+
+        // 解放済みステージ数とプレイヤータイプを読み込む
+        file >> m_maxUnlockedStage >> loadedType;
 
         // 安全対策: 範囲チェック
         if (m_maxUnlockedStage < 1) m_maxUnlockedStage = 1;
         if (m_maxUnlockedStage > 5) m_maxUnlockedStage = 5;
 
+        // プレイヤータイプの反映
+        // (Enumの範囲内かチェック)
+        if (loadedType >= (int)PlayerType::AssaultStriker && loadedType <= (int)PlayerType::PlasmaSniper) {
+            m_selectedPlayerType = (PlayerType)loadedType;
+        }
+        else {
+            m_selectedPlayerType = PlayerType::AssaultStriker; // デフォルト
+        }
+
         file.close();
+        AppLog::AddLog("[System] Game Loaded. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
         return true; // ロード成功
     }
     return false; // ファイルがない（初回プレイなど）
@@ -138,5 +154,11 @@ void Game::ResetGame() {
     m_currentStage = 1;
     m_currentPhase = 1;
     m_savedPlayerHP = -1;
+
+    // NEW GAME時はプレイヤータイプはデフォルトに戻さない方が親切な場合もありますが、
+    // ここでは完全に初期化するならデフォルトに戻します。
+    // (もしキャラ選択画面から始まるなら、そこで上書きされるので気にしなくてOK)
+    m_selectedPlayerType = PlayerType::AssaultStriker;
+
     SaveGame(); // リセットした状態を保存
 }

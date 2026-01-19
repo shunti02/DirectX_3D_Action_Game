@@ -136,9 +136,29 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
         return true;
-   if(msg == WM_DESTROY)PostQuitMessage(0);
-   if(msg == WM_KEYDOWN && wParam == VK_ESCAPE)PostQuitMessage(0);
-   return DefWindowProc(hWnd, msg, wParam, lParam);
+    switch (msg) {
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        return 0;
+
+    case WM_KEYDOWN:
+        if (wParam == VK_ESCAPE) PostQuitMessage(0);
+        return 0;
+
+        // ★追加: マウスホイール処理
+    case WM_MOUSEWHEEL:
+        if (auto game = Game::GetInstance()) {
+            if (auto input = game->GetInput()) {
+                // ホイールの回転量を取得 (120の倍数が返ってくる)
+                // GET_WHEEL_DELTA_WPARAM マクロで上位ワードを取得
+                float delta = (float)GET_WHEEL_DELTA_WPARAM(wParam);
+                input->AddMouseWheelDelta(delta);
+            }
+        }
+        return 0;
+    }
+
+    return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
 /*----------------------------------------------------------

@@ -470,21 +470,33 @@ void PhysicsSystem::Update(float dt) {
         auto& bullet = registry->GetComponent<BulletComponent>(bulletID);
         if (!bullet.isActive) continue;
 
-        // ターゲット（プレイヤー）との判定
-        for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
-            // 弾自身とは判定しない
-            if (bulletID == targetID) continue;
+        if (bullet.fromPlayer) {
+            // --- プレイヤーの弾 -> エネミーに当たる ---
+            for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
+                if (bulletID == targetID) continue;
+                // 敵かつコライダー持ち
+                if (!registry->HasComponent<EnemyComponent>(targetID)) continue;
+                if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
+                if (!registry->HasComponent<StatusComponent>(targetID)) continue;
 
-            // プレイヤーかつコライダー持ちのみ対象
-            if (!registry->HasComponent<PlayerComponent>(targetID)) continue;
-            if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
-            if (!registry->HasComponent<StatusComponent>(targetID)) continue;
+                // 判定
+                CheckBulletHit(bulletID, targetID);
+                if (!bullet.isActive) break;
+            }
+        }
+        else {
+            // --- 敵の弾 -> プレイヤーに当たる (既存) ---
+            for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
+                if (bulletID == targetID) continue;
+                // プレイヤーかつコライダー持ち
+                if (!registry->HasComponent<PlayerComponent>(targetID)) continue;
+                if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
+                if (!registry->HasComponent<StatusComponent>(targetID)) continue;
 
-            // 判定関数呼び出し
-            CheckBulletHit(bulletID, targetID);
-
-            // 弾が非アクティブ（ヒットして消滅）になったらループを抜ける
-            if (!bullet.isActive) break;
+                // 判定
+                CheckBulletHit(bulletID, targetID);
+                if (!bullet.isActive) break;
+            }
         }
     }
 }
@@ -1084,58 +1096,93 @@ void PhysicsSystem::CheckBulletHit(EntityID bulletID, EntityID targetID) {
     // ヒット！
     if (distSq < bulletRadius * bulletRadius) {
         auto& targetStatus = registry->GetComponent<StatusComponent>(targetID);
+        // ====================================================
+         // パターンA: ターゲットが「プレイヤー」の場合
+         // ====================================================
+        if (registry->HasComponent<PlayerComponent>(targetID)) {
+            // プレイヤー専用の無敵時間チェック
+            if (targetStatus.invincibleTimer <= 0.0f) {
+                targetStatus.TakeDamage(bullet.damage);
+                targetStatus.invincibleTimer = 0.5f;
 
-        // 無敵時間チェック
-        if (targetStatus.invincibleTimer <= 0.0f) {
-            // 1. ダメージ
-            targetStatus.TakeDamage(bullet.damage);
-            targetStatus.invincibleTimer = 0.5f; // 無敵時間付与
-            DebugLog("Bullet Hit! Damage:%d PlayerHP:%d", bullet.damage, targetStatus.hp);
-
-            // 2. ヒットエフェクト (火花)
-            if (registry->HasComponent<TransformComponent>(targetID)) {
-                // 弾が当たった場所(bulletPos)にエフェクトを出す
+                // プレイヤー用の赤いエフェクト
                 EntityFactory::CreateHitEffect(pWorld, bTrans.position, 5, { 1.0f, 0.2f, 0.0f, 1.0f });
-            }
+                DebugLog("Player Hit!");
 
-            // 3. ノックバック
-            if (registry->HasComponent<PlayerComponent>(targetID)) {
+                // ノックバック処理
                 auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
-                auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
-
-                // 弾の進行方向を取得 (PhysicsComponentがあればそれを使う)
                 XMVECTOR knockDir;
                 if (registry->HasComponent<PhysicsComponent>(bulletID)) {
                     auto& bPhy = registry->GetComponent<PhysicsComponent>(bulletID);
                     knockDir = XMLoadFloat3(&bPhy.velocity);
-                    knockDir = XMVector3Normalize(knockDir);
                 }
                 else {
-                    // なければ位置関係から計算
-                    XMVECTOR pPos = XMLoadFloat3(&pTrans.position);
-                    knockDir = XMVector3Normalize(pPos - bulletPos);
+                    knockDir = XMVectorSet(0, 0, 1, 0);
                 }
-
-                // 後ろへ弾く + 少し浮かす
-                // Y成分を0にして水平方向のみ取得し、Yを少し足す
-                knockDir = XMVectorSetY(knockDir, 0.0f);
-                knockDir = XMVector3Normalize(knockDir);
-
-                XMVECTOR knockVel = knockDir * 8.0f; // 強さ8
-                knockVel = XMVectorSetY(knockVel, 5.0f); // 上方向5
-
+                knockDir = XMVector3Normalize(XMVectorSetY(knockDir, 0.0f));
+                XMVECTOR knockVel = knockDir * 8.0f;
+                knockVel = XMVectorSetY(knockVel, 5.0f);
                 XMStoreFloat3(&pComp.velocity, knockVel);
-                pComp.isGrounded = false; // 空中へ
-            }
+                pComp.isGrounded = false;
 
-            // 4. 音 (SE)
-            if (auto audio = Game::GetInstance()->GetAudio()) {
-                audio->Play("SE_SWITCH"); // ダメージ音があればそれに変更
+                if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
+
+                // 弾を消して終了
+                bullet.isActive = false;
+                pWorld->DestroyEntity(bulletID);
+                return;
             }
         }
+        // ====================================================
+        // パターンB: ターゲットが「エネミー」の場合
+        // ====================================================
+        else if (registry->HasComponent<EnemyComponent>(targetID)) {
+            // ダメージ
+            targetStatus.TakeDamage(bullet.damage);
 
-        // 弾を消す (ダメージを与えても無敵でも、当たったら消える)
-        bullet.isActive = false;
-        pWorld->DestroyEntity(bulletID);
+            // エネミー用の青/緑エフェクト
+            EntityFactory::CreateHitEffect(pWorld, bTrans.position, 5, { 0.0f, 1.0f, 1.0f, 1.0f });
+
+            // ノックバック
+            auto& enemy = registry->GetComponent<EnemyComponent>(targetID);
+            if (!enemy.isImmovable && registry->HasComponent<PhysicsComponent>(targetID)) {
+                auto& ePhy = registry->GetComponent<PhysicsComponent>(targetID);
+                XMVECTOR knockDir;
+                if (registry->HasComponent<PhysicsComponent>(bulletID)) {
+                    auto& bPhy = registry->GetComponent<PhysicsComponent>(bulletID);
+                    knockDir = XMLoadFloat3(&bPhy.velocity);
+                }
+                else {
+                    knockDir = XMVectorSet(0, 0, 1, 0);
+                }
+                knockDir = XMVector3Normalize(XMVectorSetY(knockDir, 0.0f));
+                float knockPower = 20.0f / enemy.weight;
+                XMVECTOR v = knockDir * knockPower;
+                v = XMVectorSetY(v, 2.0f / enemy.weight);
+                XMStoreFloat3(&ePhy.velocity, v);
+                enemy.knockbackTimer = 0.2f;
+            }
+
+            // ★死亡判定 (ここが通るようになります！)
+            if (targetStatus.IsDead()) {
+                DebugLog("Enemy(%d) Defeated by Bullet!", targetID);
+
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
+                    EntityFactory::CreateHitEffect(pWorld, tf.position, 20, { 1.0f, 0.2f, 0.2f, 1.0f });
+                }
+
+                // パーツ削除 -> 本体削除
+                DestroyEnemyParts(pWorld, targetID);
+                pWorld->DestroyEntity(targetID);
+
+                if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
+            }
+
+            // 弾を消して終了
+            bullet.isActive = false;
+            pWorld->DestroyEntity(bulletID);
+            return;
+        }
     }
 }

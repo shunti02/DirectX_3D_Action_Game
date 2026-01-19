@@ -7,6 +7,7 @@ void Input::Initialize(HWND hWnd) {
 }
 
 void Input::Update() {
+    m_mouseWheelDelta = 0.0f;
     previousKeys = currentKeys;
     for (int i = 0; i < 256; ++i) {
         // ÅãˆÊƒrƒbƒg‚ª—§‚Á‚Ä‚¢‚ê‚Î‰Ÿ‚³‚ê‚Ä‚¢‚é
