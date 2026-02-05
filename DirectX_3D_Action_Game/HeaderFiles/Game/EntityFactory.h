@@ -103,7 +103,7 @@ namespace EntityFactory {
             world->AddComponent<ColliderComponent>(id);
             world->AddComponent<PlayerComponent>(id, PlayerComponent{ .type = params.playerType,.moveSpeed = 5.0f });
             world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 100, .maxHp = 100, .attackPower = 5 });
-            world->AddComponent<ActionComponent>(id, ActionComponent{ .attackCooldown = 2.0f, .duration = 0.5f });
+            world->AddComponent<ActionComponent>(id, ActionComponent{ .attackCooldown = 1.0f, .duration = 0.5f });
             //役割タグ
             if (params.role == PlayerRole::Attacker) {
                 world->AddComponent<AttackerTag>(id);//攻撃タグ
@@ -753,7 +753,7 @@ namespace EntityFactory {
                     world->AddComponent<MeshComponent>(id);
                     world->AddComponent<ColliderComponent>(id);
                     // 不動設定 (weight=超大, isImmovable=true)
-                    world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 0.0f, .attackRange = 40.0f, .isRanged = true, .weight = 1000.0f, .isImmovable = true });
+                    world->AddComponent<EnemyComponent>(id, EnemyComponent{ .type = EnemyType::Boss, .moveSpeed = 0.0f, .attackRange = 40.0f, .isRanged = true,.attackInterval = 5.0f,.weight = 1000.0f, .isImmovable = true });
                     world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 1000, .maxHp = 1000, .attackPower = 40 });
                     world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = false });
 
@@ -1005,6 +1005,79 @@ namespace EntityFactory {
         }
         DebugLog("Player Shot Fired! ID: %d", id);
     }
+    // ★追加: 爆発エフェクト生成関数
+    inline void CreateExplosion(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
+        for (int i = 0; i < count; ++i) {
+            float speed = 5.0f + (rand() % 100) / 10.0f;
+            float angleY = (rand() % 360) * 3.14f / 180.0f;
+            float angleV = ((rand() % 180) - 90) * 3.14f / 180.0f;
+
+            float vx = cosf(angleV) * sinf(angleY) * speed;
+            float vy = sinf(angleV) * speed;
+            float vz = cosf(angleV) * cosf(angleY) * speed;
+
+            EntityID id = world->CreateEntity()
+                .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} })
+                .AddComponent<ParticleComponent>(ParticleComponent{
+                    .lifeTime = 0.5f + (rand() % 50) / 100.0f,
+                    .velocity = {vx, vy, vz},
+                    .useGravity = false, // 爆発は飛び散る
+                    .scaleSpeed = -2.0f,
+                    .type = ParticleType::Explosion
+                    })
+                .Build();
+
+            world->AddComponent<MeshComponent>(id);
+            // 爆発は赤いキューブや球など
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_None, 0, 0, 0);
+        }
+    }
+    // ★追加: 煙エフェクト (爆発に混ぜる)
+    inline void CreateSmoke(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
+        for (int i = 0; i < count; ++i) {
+            float vx = (rand() % 100 - 50) / 20.0f;
+            float vy = (rand() % 100) / 20.0f + 1.0f; // 上昇する
+            float vz = (rand() % 100 - 50) / 20.0f;
+
+            EntityID id = world->CreateEntity()
+                .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.8f, 0.8f, 0.8f} })
+                .AddComponent<ParticleComponent>(ParticleComponent{
+                    .lifeTime = 1.0f + (rand() % 10) / 10.0f, // 長生き
+                    .velocity = {vx, vy, vz},
+                    .useGravity = false,
+                    .scaleSpeed = -0.3f, // ゆっくり小さくなる
+                    .type = ParticleType::Smoke // ★煙タイプ
+                    })
+                .Build();
+
+            world->AddComponent<MeshComponent>(id);
+            // 煙はグレーのキューブ
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_None, 0, 0, 0);
+        }
+    }
+
+    // ★追加: マズルフラッシュ (発射時の閃光)
+    inline void CreateMuzzleFlash(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir) {
+        // 発射方向に少しずらす
+        pos.x += dir.x * 0.5f;
+        pos.y += dir.y * 0.5f;
+        pos.z += dir.z * 0.5f;
+
+        EntityID id = world->CreateEntity()
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} })
+            .AddComponent<ParticleComponent>(ParticleComponent{
+                .lifeTime = 0.1f, // 一瞬で消える
+                .velocity = {0, 0, 0},
+                .useGravity = false,
+                .scaleSpeed = 5.0f, // 急激に広がる
+                .type = ParticleType::MuzzleFlash // ★閃光タイプ
+                })
+            .Build();
+
+        world->AddComponent<MeshComponent>(id);
+        // 黄色/オレンジの球
+        AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 1.0f, 0.8f, 0.2f, 0.8f }, ColliderType::Type_None, 0, 0, 0);
+    }
     // ★追加: ヒットエフェクト生成 (火花を散らす)
     inline void CreateHitEffect(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
         for (int i = 0; i < count; ++i) {
@@ -1028,7 +1101,7 @@ namespace EntityFactory {
 
             world->AddComponent<MeshComponent>(id);
             // 形は小さめのキューブ
-            AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
+            AttachMeshAndCollider(id, world, ShapeType::TETRAHEDRON, color, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
         }
 		DebugLog("Created Hit Effect at (%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
     }
