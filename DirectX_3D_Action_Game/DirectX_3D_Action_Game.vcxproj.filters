@@ -135,6 +135,24 @@
     <ClCompile Include="SourceFiles\Engine\SkyBox.cpp">
       <Filter>SourceFiles\Engine</Filter>
     </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\CharacterSelectScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\StageSelectScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\ParticleSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\SceneManager.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\EnemyAnimationSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\MovingSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HeaderFiles\Engine\Graphics.h">
@@ -289,6 +307,36 @@
     </ClInclude>
     <ClInclude Include="HeaderFiles\Engine\SkyBox.h">
       <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\CharacterSelectScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\StageSelectScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\BulletComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\PhysicsComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\ParticleComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\ParticleSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\EnemyPartComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\EnemyAnimationSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\MovingComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\MovingSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

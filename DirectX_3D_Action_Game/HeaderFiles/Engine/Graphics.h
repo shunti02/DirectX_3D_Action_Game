@@ -12,9 +12,13 @@
 #include <string>
 #include <vector>
 #include "Vertex.h"      // 頂点定義
+#include <d2d1.h>
+#include <dwrite.h>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
 
 using Microsoft::WRL::ComPtr;
 
@@ -33,7 +37,8 @@ public:
     // ★追加: シェーダー作成・設定
     bool CreateVertexShader(const std::wstring& filename, ID3D11VertexShader** ppVertexShader, ID3D11InputLayout** ppInputLayout);
     bool CreatePixelShader(const std::wstring& filename, ID3D11PixelShader** ppPixelShader);
-
+    // ★追加: ジオメトリシェーダ作成
+    bool CreateGeometryShader(const std::wstring& filename, ID3D11GeometryShader** ppGeometryShader);
     bool CreateConstantBuffer(UINT size, ID3D11Buffer** ppBuffer);
     // ★追加: バッファ作成
     bool CreateVertexBuffer(const std::vector<Vertex>& vertices, ID3D11Buffer** ppBuffer);
@@ -43,6 +48,19 @@ public:
 	void BeginUI();
 	void EndUI();
 
+    void BeginDraw2D();
+    void EndDraw2D();
+	// 文字列描画
+    void DrawString(const std::wstring& text, float x, float y, float size, uint32_t color);
+    // ★追加: 図形描画用
+    void DrawRect(float x, float y, float w, float h, uint32_t color); // 枠線
+    void FillRect(float x, float y, float w, float h, uint32_t color); // 塗りつぶし
+
+    // 内部ヘルパー: シェーダーコンパイル
+    bool CompileShaderFromFile(const std::wstring& filename, const std::string& entryPoint, const std::string& shaderModel, ID3DBlob** ppBlobOut);
+
+    // ★追加: 枠線描画
+    void DrawRectOutline(float x, float y, float w, float h, float thickness, uint32_t color);
 private:
     ComPtr<ID3D11Device> pDevice;
     ComPtr<ID3D11DeviceContext> pContext;
@@ -53,8 +71,14 @@ private:
     ComPtr<ID3D11Texture2D> pDepthStencilBuffer;      // 深度バッファ本体
     ComPtr<ID3D11DepthStencilView> pDepthStencilView; // 深度バッファのビュー
     ComPtr<ID3D11DepthStencilState> pDepthStencilState; // 深度テストの設定
+    ComPtr<ID2D1Factory> pD2DFactory;
+    ComPtr<IDWriteFactory> pDWriteFactory;
+    ComPtr<ID2D1RenderTarget> pD2DRenderTarget;
+    ComPtr<IDWriteTextFormat> pTextFormat;
+    ComPtr<ID2D1SolidColorBrush> pBrush;
 
-    // 内部ヘルパー: シェーダーコンパイル
-    bool CompileShaderFromFile(const std::wstring& filename, const std::string& entryPoint, const std::string& shaderModel, ID3DBlob** ppBlobOut);
+    
+    bool InitD2D(IDXGISwapChain* swapChain);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> m_pD2DSolidBrush;
 };
 #endif //GRAPHICS_H

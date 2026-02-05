@@ -1,6 +1,7 @@
 #define NOMINMAX 
 
 #include "App/Main.h"
+#include "App/Game.h"
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/World.h"
 #include "ECS/Components/TransformComponent.h"
@@ -14,11 +15,13 @@
 #include "ECS/Components/RolesComponent.h"
 #include "ECS/Components/StatusComponent.h"
 #include "ECS/Components/PlayerPartComponent.h"
+#include "ECS/Components/PhysicsComponent.h"
 #include <vector>
 #include <cmath>
 #include <algorithm> // std::max, std::min
 #include <DirectXMath.h>
 #include <DirectXCollision.h>
+#include "Game/EntityFactory.h"
 
 using namespace DirectX;
 
@@ -81,6 +84,30 @@ static float SegmentToSegmentDistSq(
     return XMVectorGetX(XMVector3LengthSq(outC1 - outC2));
 }
 
+// -----------------------------------------------------------------------
+// 内部ヘルパー: 指定した親IDを持つパーツを全て削除する
+// -----------------------------------------------------------------------
+static void DestroyEnemyParts(World* world, EntityID parentID) {
+    auto registry = world->GetRegistry();
+    // 全エンティティを走査して、親IDが一致するパーツを探す
+    // (ECSの規模が大きくなると重くなりますが、今の規模なら大丈夫です)
+    std::vector<EntityID> partsToDelete;
+
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (registry->HasComponent<EnemyPartComponent>(id)) {
+            auto& part = registry->GetComponent<EnemyPartComponent>(id);
+            if (part.parentID == (int)parentID) {
+                partsToDelete.push_back(id);
+            }
+        }
+    }
+
+    // まとめて削除
+    for (EntityID id : partsToDelete) {
+        world->DestroyEntity(id);
+    }
+}
+
 
 // -----------------------------------------------------------------------
 // OBB取得関数の実装
@@ -123,7 +150,7 @@ OBB PhysicsSystem::GetOBB(EntityID id) {
         };
     }
     else if (col.type == ColliderType::Type_Sphere) {
-        // ★追加: 球体の場合 (半径をXYZすべてのExtentに適用して立方体扱いとする、または球として扱う)
+        // 球体の場合 (半径をXYZすべてのExtentに適用して立方体扱いとする、または球として扱う)
         // OBBとして近似する場合は、半径を各軸のハーフサイズとします
         float scaledRadius = col.radius * trans.scale.x; // 一律Xスケール依存とする
         obb.extents = { scaledRadius, scaledRadius, scaledRadius };
@@ -138,7 +165,7 @@ OBB PhysicsSystem::GetOBB(EntityID id) {
 }
 
 // -----------------------------------------------------------------------
-// ★追加: レイキャストによる地面判定
+// レイキャストによる地面判定
 // -----------------------------------------------------------------------
 // 戻り値: ヒットしたかどうか (true/false)
 // outDist: ヒットした場合の距離
@@ -168,6 +195,7 @@ static bool RaycastGround(World* world, XMVECTOR origin, float maxDist, float& o
         // OBB取得 (PhysicsSystemクラスのメソッドをstaticヘルパー化するか、ここでも同様の計算を行う)
         // ここでは簡易的にOBB計算を再実装（またはPhysicsSystem::GetOBBをpublic staticにして呼ぶ）
         auto& trans = registry->GetComponent<TransformComponent>(id);
+        if (trans.scale.y > 1.5f) continue;
         auto& col = registry->GetComponent<ColliderComponent>(id);
         if (col.type == ColliderType::Type_None) continue;
 
@@ -210,6 +238,100 @@ void PhysicsSystem::Update(float dt) {
             if (status.invincibleTimer > 0.0f) {
                 status.invincibleTimer -= dt;
             }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // ★追加: 物理移動ループ (弾などを飛ばす処理)
+    // ---------------------------------------------------------
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        // PhysicsComponent と TransformComponent があるものだけ動かす
+        if (!registry->HasComponent<PhysicsComponent>(id)) continue;
+        if (!registry->HasComponent<TransformComponent>(id)) continue;
+
+        auto& phy = registry->GetComponent<PhysicsComponent>(id);
+        auto& trans = registry->GetComponent<TransformComponent>(id);
+
+        // 速度(velocity) を 位置(position) に加算
+        trans.position.x += phy.velocity.x * dt;
+        trans.position.y += phy.velocity.y * dt;
+        trans.position.z += phy.velocity.z * dt;
+
+        // 重力処理 (useGravityがtrueなら)
+        if (phy.useGravity) {
+            phy.velocity.y -= 9.8f * dt;
+        }
+        // 3. ★追加: エネミー等の接地判定 (プレイヤー以外)
+        // プレイヤーは独自の判定があるため除外
+        if (!registry->HasComponent<PlayerComponent>(id) &&
+            registry->HasComponent<ColliderComponent>(id) &&
+            !registry->HasComponent<BulletComponent>(id)) 
+        {
+            // 自分の底面の高さ (中心Y - 高さの半分)
+            float halfHeight = 0.5f * trans.scale.y; // スケールYの半分を高さと仮定
+
+            float rayDist = 0.0f;
+            XMVECTOR origin = XMLoadFloat3(&trans.position);
+
+            // 足元少し下までレイキャスト
+            bool hit = RaycastGround(pWorld, origin, halfHeight + 0.5f, rayDist);
+
+            if (hit) {
+                // 接地判定 (地面に近いなら接地)
+                if (rayDist <= halfHeight + 0.1f) {
+                    // 位置補正 (めり込み防止)
+                    float groundY = trans.position.y - rayDist;
+                    trans.position.y = groundY + halfHeight;
+
+                    // 落下停止
+                    if (phy.velocity.y < 0) {
+                        phy.velocity.y = 0;
+                    }
+
+                    // 摩擦 (ノックバック後の滑りを止める)
+                    phy.velocity.x *= 0.9f;
+                    phy.velocity.z *= 0.9f;
+
+                    // 完全停止
+                    if (std::abs(phy.velocity.x) < 0.1f) phy.velocity.x = 0;
+                    if (std::abs(phy.velocity.z) < 0.1f) phy.velocity.z = 0;
+                }
+            }
+            else {
+                // レイが当たらなくてもY=0以下には落とさない安全策
+                if (trans.position.y < halfHeight) {
+                    trans.position.y = halfHeight;
+                    if (phy.velocity.y < 0) phy.velocity.y = 0;
+                    phy.velocity.x *= 0.9f;
+                    phy.velocity.z *= 0.9f;
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // ★追加: エネミーと壁の衝突判定
+    // ---------------------------------------------------------
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        // エネミーかつコライダー持ちのみ
+        if (!registry->HasComponent<EnemyComponent>(id)) continue;
+        if (!registry->HasComponent<ColliderComponent>(id)) continue;
+
+        // 他のすべてのオブジェクト(壁など)と判定
+        for (EntityID otherID = 0; otherID < ECSConfig::MAX_ENTITIES; ++otherID) {
+            if (id == otherID) continue;
+
+            // 相手がコライダーを持っていない、または弾/攻撃判定なら無視
+            if (!registry->HasComponent<ColliderComponent>(otherID)) continue;
+            if (registry->HasComponent<BulletComponent>(otherID)) continue;
+            if (registry->HasComponent<AttackBoxComponent>(otherID)) continue;
+            if (registry->HasComponent<AttackSphereComponent>(otherID)) continue;
+
+            // エネミー同士の衝突は避ける？（今回は壁判定重視なのでスキップしてもOK）
+            if (registry->HasComponent<EnemyComponent>(otherID)) continue;
+
+            // 衝突解決 (id を otherID から押し出す)
+            CheckAndResolve(id, otherID);
         }
     }
 
@@ -276,22 +398,6 @@ void PhysicsSystem::Update(float dt) {
             CheckAndResolve(playerID, otherID);
         }
     }
-
-    //EntityID playerID = ECSConfig::INVALID_ID;
-    //for (EntityID playerID = 0; playerID < ECSConfig::MAX_ENTITIES; ++playerID) {
-    //    if (!registry->HasComponent<PlayerComponent>(playerID))continue;
-    //    if (!registry->HasComponent<ColliderComponent>(playerID))continue;
-    //    //接地フラグをリセット
-    //    auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
-    //    pComp.isGrounded = false;
-
-    //    for (EntityID otherID = 0; otherID < ECSConfig::MAX_ENTITIES; ++otherID) {
-    //        if (playerID == otherID) continue;
-    //        if (!registry->HasComponent<ColliderComponent>(otherID)) continue;
-    //        CheckAndResolve(playerID, otherID);
-    //    }
-    //}
-
     // ---------------------------------------------------------
     // 攻撃判定のループ
     // ---------------------------------------------------------
@@ -317,7 +423,7 @@ void PhysicsSystem::Update(float dt) {
         }
     }
     // ---------------------------------------------------------
-    // 4. ★追加: 回復判定のループ
+    // 4.回復判定のループ
     // ---------------------------------------------------------
     for (EntityID recoveryID = 0; recoveryID < ECSConfig::MAX_ENTITIES; ++recoveryID) {
         if (!registry->HasComponent<RecoveryBoxComponent>(recoveryID)) continue;
@@ -338,7 +444,7 @@ void PhysicsSystem::Update(float dt) {
             CheckRecoveryHit(recoveryID, targetID);
         }
     }
-    // ★追加: 攻撃球の判定ループ
+    // 攻撃球の判定ループ
     for (EntityID attackID = 0; attackID < ECSConfig::MAX_ENTITIES; ++attackID) {
         if (!registry->HasComponent<AttackSphereComponent>(attackID)) continue;
 
@@ -355,30 +461,50 @@ void PhysicsSystem::Update(float dt) {
             CheckAttackSphereHit(attackID, targetID);
         }
     }
+    // ---------------------------------------------------------
+    // ★追加: 弾 (Bullet) の判定ループ
+    // ---------------------------------------------------------
+    for (EntityID bulletID = 0; bulletID < ECSConfig::MAX_ENTITIES; ++bulletID) {
+        if (!registry->HasComponent<BulletComponent>(bulletID)) continue;
 
-    // ★追加: 回復球の判定ループ
-    for (EntityID recoveryID = 0; recoveryID < ECSConfig::MAX_ENTITIES; ++recoveryID) {
-        if (!registry->HasComponent<RecoverySphereComponent>(recoveryID)) continue;
+        auto& bullet = registry->GetComponent<BulletComponent>(bulletID);
+        if (!bullet.isActive) continue;
 
-        auto& sphere = registry->GetComponent<RecoverySphereComponent>(recoveryID);
-        EntityID ownerID = sphere.ownerID;
+        if (bullet.fromPlayer) {
+            // --- プレイヤーの弾 -> エネミーに当たる ---
+            for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
+                if (bulletID == targetID) continue;
+                // 敵かつコライダー持ち
+                if (!registry->HasComponent<EnemyComponent>(targetID)) continue;
+                if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
+                if (!registry->HasComponent<StatusComponent>(targetID)) continue;
 
-        for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
-            if (recoveryID == targetID) continue;
-            if (!registry->HasComponent<PlayerComponent>(targetID)) continue;
-            if (!registry->HasComponent<StatusComponent>(targetID)) continue;
-            if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
+                // 判定
+                CheckBulletHit(bulletID, targetID);
+                if (!bullet.isActive) break;
+            }
+        }
+        else {
+            // --- 敵の弾 -> プレイヤーに当たる (既存) ---
+            for (EntityID targetID = 0; targetID < ECSConfig::MAX_ENTITIES; ++targetID) {
+                if (bulletID == targetID) continue;
+                // プレイヤーかつコライダー持ち
+                if (!registry->HasComponent<PlayerComponent>(targetID)) continue;
+                if (!registry->HasComponent<ColliderComponent>(targetID)) continue;
+                if (!registry->HasComponent<StatusComponent>(targetID)) continue;
 
-            CheckRecoverySphereHit(recoveryID, targetID);
+                // 判定
+                CheckBulletHit(bulletID, targetID);
+                if (!bullet.isActive) break;
+            }
         }
     }
-
 }
 
 // -----------------------------------------------------------------------
 // 衝突判定の実装 (CheckAndResolve)
 // -----------------------------------------------------------------------
-void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
+void PhysicsSystem::CheckAndResolve(EntityID entityID, EntityID otherID) {
     auto registry = pWorld->GetRegistry();
 
     // 相手が「攻撃ボックス」や「回復ボックス」なら、物理的な衝突処理（押し出し）は一切しない
@@ -386,21 +512,22 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
     if (registry->HasComponent<RecoveryBoxComponent>(otherID)) return;
     if (registry->HasComponent<AttackSphereComponent>(otherID)) return;
     if (registry->HasComponent<RecoverySphereComponent>(otherID)) return;
+    if (registry->HasComponent<BulletComponent>(otherID)) return;
 
     auto& otherCol = registry->GetComponent<ColliderComponent>(otherID);
     if (otherCol.type == ColliderType::Type_None) return;
 
-    // ★重要追加2: 相手が「自分のパーツ」なら無視する (自己衝突防止)
+    // 相手が「自分のパーツ」なら無視する (自己衝突防止)
     if (registry->HasComponent<PlayerPartComponent>(otherID)) {
         auto& part = registry->GetComponent<PlayerPartComponent>(otherID);
-        if (part.parentID == (int)playerID) {
+        if (part.parentID == (int)entityID) {
             return; // 自分の体の一部なので衝突しない
         }
     }
 
-    auto& pTrans = registry->GetComponent<TransformComponent>(playerID);
-    auto& pCol = registry->GetComponent<ColliderComponent>(playerID);
-    auto& pComp = registry->GetComponent<PlayerComponent>(playerID);
+    auto& pTrans = registry->GetComponent<TransformComponent>(entityID);
+    auto& pCol = registry->GetComponent<ColliderComponent>(entityID);
+    auto& pComp = registry->GetComponent<PlayerComponent>(entityID);
 
     OBB boxOBB = GetOBB(otherID);
 
@@ -519,7 +646,7 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
     // --- 衝突解決 ---
     if (isHit) {
         // ---------------------------------------------------------
-        // ★追加: ダメージ処理と消滅処理
+        // ダメージ処理と消滅処理
         // ---------------------------------------------------------
         // 相手がプレイヤーならダメージ処理をスキップ！ (ここを追加)
         bool isTargetPlayer = registry->HasComponent<PlayerComponent>(otherID);
@@ -527,8 +654,8 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
         if (!isTargetPlayer && registry->HasComponent<StatusComponent>(otherID)) {
 
             // 自分(プレイヤー)もステータスを持っているならダメージ計算
-            if (registry->HasComponent<StatusComponent>(playerID)) {
-                auto& playerStatus = registry->GetComponent<StatusComponent>(playerID);
+            if (registry->HasComponent<StatusComponent>(entityID)) {
+                auto& playerStatus = registry->GetComponent<StatusComponent>(entityID);
                 auto& enemyStatus = registry->GetComponent<StatusComponent>(otherID);
 
                 // プレイヤーの無敵時間がなければ食らう
@@ -543,7 +670,7 @@ void PhysicsSystem::CheckAndResolve(EntityID playerID, EntityID otherID) {
                     // プレイヤーを少し無敵にする
                     playerStatus.invincibleTimer = 1.0f;
 
-                    // ★修正: ノックバック処理 (斜め後ろへ強く弾く)
+                    // ノックバック処理 (斜め後ろへ強く弾く)
                     XMVECTOR enemyPos = XMLoadFloat3(&boxOBB.center);
                     XMVECTOR myPos = pos;
 
@@ -647,7 +774,49 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
             targetStatus.TakeDamage(attackBox.damage);
             targetStatus.invincibleTimer = 0.5f;
             DebugLog("Hit! Target:%d Dmg:%d HP:%d", targetID, attackBox.damage, targetStatus.hp);
-            // ★修正: ノックバック処理
+            if (registry->HasComponent<TransformComponent>(targetID)) {
+                auto& tTrans = registry->GetComponent<TransformComponent>(targetID);
+                EntityFactory::CreateHitEffect(pWorld, tTrans.position, 8, { 1.0f, 0.5f, 0.0f, 1.0f });
+
+                // エネミーを倒した時はさらに派手に！
+                if (targetStatus.IsDead()) {
+                    EntityFactory::CreateHitEffect(pWorld, tTrans.position, 20, { 1.0f, 0.2f, 0.2f, 1.0f }); // 赤い爆発
+                }
+            }
+            // ---------------------------------------------------------
+            // ★修正: エネミーのノックバック処理 (重さ対応)
+            // ---------------------------------------------------------
+            if (registry->HasComponent<EnemyComponent>(targetID) &&
+                registry->HasComponent<PhysicsComponent>(targetID))
+            {
+                auto& enemy = registry->GetComponent<EnemyComponent>(targetID);
+
+                // ★追加: 不動フラグが立っていたらノックバックしない
+                if (!enemy.isImmovable) {
+                    auto& ePhy = registry->GetComponent<PhysicsComponent>(targetID);
+                    auto& eTrans = registry->GetComponent<TransformComponent>(targetID);
+
+                    XMVECTOR enemyPosVal = XMLoadFloat3(&eTrans.position);
+                    XMVECTOR dir = enemyPosVal - attackPos;
+                    dir = XMVectorSetY(dir, 0.0f);
+                    dir = XMVector3Normalize(dir);
+
+                    // ★修正: 重さ(weight)で割る！
+                    // 基本威力: 後退10, 上昇5
+                    // weight=1.0ならそのまま。weight=10.0なら1/10になる。
+                    float knockBackPower = 10.0f / enemy.weight;
+                    float liftPower = 5.0f / enemy.weight;
+
+                    XMVECTOR v = dir * knockBackPower;
+                    v = XMVectorSetY(v, liftPower);
+
+                    XMStoreFloat3(&ePhy.velocity, v);
+
+                    // 硬直時間はそのまま
+                    enemy.knockbackTimer = 0.5f;
+                }
+            }
+            // ノックバック処理
             if (isTargetPlayer) {
                 auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
                 auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
@@ -665,7 +834,7 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
                 XMVECTOR dir = targetPos - enemyPos;
                 dir = XMVectorSetY(dir, 0.0f);
 
-                // ★重なっている場合: プレイヤーの背中側へ飛ばす (Rotationを使って計算)
+                // 重なっている場合: プレイヤーの背中側へ飛ばす (Rotationを使って計算)
                 if (XMVectorGetX(XMVector3LengthSq(dir)) < 0.001f) {
                     // プレイヤーの向きを取得して、その逆方向(後ろ)を計算
                     XMMATRIX rotMat = XMMatrixRotationY(pTrans.rotation.y);
@@ -688,9 +857,17 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
             // 死亡判定
             if (targetStatus.IsDead()) {
                 DebugLog("Target(%d) Defeated!", targetID);
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
 
-                // ★修正: プレイヤーなら削除しない (Deadアニメーションのため)
+                    // 音も鳴らす
+                    if (auto audio = Game::GetInstance()->GetAudio()) {
+                        audio->Play("SE_SWITCH");
+                    }
+                }
+                // プレイヤーなら削除しない (Deadアニメーションのため)
                 if (!isTargetPlayer) {
+                    DestroyEnemyParts(pWorld, targetID);
                     pWorld->DestroyEntity(targetID);
                 }
             }
@@ -703,7 +880,7 @@ void PhysicsSystem::CheckAttackHit(EntityID attackID, EntityID targetID){
 void PhysicsSystem::CheckRecoveryHit(EntityID recoveryID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
 
-    // ★追加: 相手が Type_None なら判定しない
+    // 相手が Type_None なら判定しない
     if (registry->HasComponent<ColliderComponent>(targetID)) {
         if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
     }
@@ -755,7 +932,7 @@ void PhysicsSystem::CheckRecoveryHit(EntityID recoveryID, EntityID targetID) {
 void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
 
-    // ★追加: 相手が Type_None なら判定しない
+    // 相手が Type_None なら判定しない
     if (registry->HasComponent<ColliderComponent>(targetID)) {
         if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
     }
@@ -797,8 +974,45 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
             targetStatus.TakeDamage(sphere.damage);
             targetStatus.invincibleTimer = 0.5f;
             DebugLog("Sphere Hit! Target(%d)", targetID);
+            // ヒットエフェクト
+            if (registry->HasComponent<TransformComponent>(targetID)) {
+                auto& tTrans = registry->GetComponent<TransformComponent>(targetID);
+                EntityFactory::CreateHitEffect(pWorld, tTrans.position, 5, { 1.0f, 0.8f, 0.0f, 1.0f }); // 黄色い火花
 
-            // ★修正: ノックバック処理
+                if (targetStatus.IsDead()) {
+                    EntityFactory::CreateHitEffect(pWorld, tTrans.position, 20, { 1.0f, 0.2f, 0.2f, 1.0f });
+                }
+            }
+            // ---------------------------------------------------------
+            // ★修正: エネミーのノックバック処理 (範囲攻撃版)
+            // ---------------------------------------------------------
+            if (registry->HasComponent<EnemyComponent>(targetID) &&
+                registry->HasComponent<PhysicsComponent>(targetID))
+            {
+                auto& enemy = registry->GetComponent<EnemyComponent>(targetID);
+
+                // ★追加: 不動フラグチェック
+                if (!enemy.isImmovable) {
+                    auto& ePhy = registry->GetComponent<PhysicsComponent>(targetID);
+                    auto& eTrans = registry->GetComponent<TransformComponent>(targetID);
+
+                    XMVECTOR ePos = XMLoadFloat3(&eTrans.position);
+                    XMVECTOR dir = ePos - spherePos;
+                    dir = XMVectorSetY(dir, 0.0f);
+                    dir = XMVector3Normalize(dir);
+
+                    // ★修正: 重さで割る
+                    float knockBackPower = 15.0f / enemy.weight;
+                    float liftPower = 8.0f / enemy.weight;
+
+                    XMVECTOR v = dir * knockBackPower;
+                    v = XMVectorSetY(v, liftPower);
+
+                    XMStoreFloat3(&ePhy.velocity, v);
+                    enemy.knockbackTimer = 0.5f;
+                }
+            }
+            // ノックバック処理
             if (isTargetPlayer) {
                 auto& pTrans = registry->GetComponent<TransformComponent>(targetID);
                 auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
@@ -830,52 +1044,145 @@ void PhysicsSystem::CheckAttackSphereHit(EntityID attackID, EntityID targetID) {
             }
 
             if (targetStatus.IsDead()) {
-                // ★修正: プレイヤーなら削除しない
+                // 死亡エフェクト
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
+                    if (auto audio = Game::GetInstance()->GetAudio()) {
+                        audio->Play("SE_SWITCH");
+                    }
+                }
+                // プレイヤーなら削除しない
                 if (!isTargetPlayer) {
+                    DestroyEnemyParts(pWorld, targetID);
                     pWorld->DestroyEntity(targetID);
                 }
             }
         }
     }
 }
-
-void PhysicsSystem::CheckRecoverySphereHit(EntityID recoveryID, EntityID targetID) {
+// -----------------------------------------------------------------------
+// ★追加: 弾のヒット判定 (CheckBulletHit)
+// -----------------------------------------------------------------------
+void PhysicsSystem::CheckBulletHit(EntityID bulletID, EntityID targetID) {
     auto registry = pWorld->GetRegistry();
 
-    // ★追加: 相手が Type_None なら判定しない
-    if (registry->HasComponent<ColliderComponent>(targetID)) {
-        if (registry->GetComponent<ColliderComponent>(targetID).type == ColliderType::Type_None) return;
-    }
+    // 弾情報
+    auto& bullet = registry->GetComponent<BulletComponent>(bulletID);
+    auto& bTrans = registry->GetComponent<TransformComponent>(bulletID);
+    XMVECTOR bulletPos = XMLoadFloat3(&bTrans.position);
+    float bulletRadius = 0.3f; // 弾の大きさ (EntityFactoryの設定と合わせる)
 
-    auto& sphere = registry->GetComponent<RecoverySphereComponent>(recoveryID);
-    auto& trans = registry->GetComponent<TransformComponent>(recoveryID);
-
-    float radius = sphere.currentRadius;
-    XMVECTOR spherePos = XMLoadFloat3(&trans.position);
-
+    // ターゲット（プレイヤー）OBB
     OBB targetOBB = GetOBB(targetID);
-    // ... (行列計算は上と同じ) ...
     XMMATRIX targetWorld = XMLoadFloat4x4(&targetOBB.worldMatrix);
     XMVECTOR det;
     XMMATRIX targetInvWorld = XMMatrixInverse(&det, targetWorld);
-    XMVECTOR centerL = XMVector3TransformCoord(spherePos, targetInvWorld);
+
+    // 判定ロジック (点 vs OBB)
+    XMVECTOR centerL = XMVector3TransformCoord(bulletPos, targetInvWorld);
     XMFLOAT3 p; XMStoreFloat3(&p, centerL);
-    float hx = targetOBB.extents.x; float hy = targetOBB.extents.y; float hz = targetOBB.extents.z;
+
+    float hx = targetOBB.extents.x;
+    float hy = targetOBB.extents.y;
+    float hz = targetOBB.extents.z;
+
     float cx = std::max<float>(-hx, std::min<float>(p.x, hx));
     float cy = std::max<float>(-hy, std::min<float>(p.y, hy));
     float cz = std::max<float>(-hz, std::min<float>(p.z, hz));
+
     float dx = p.x - cx; float dy = p.y - cy; float dz = p.z - cz;
     float distSq = dx * dx + dy * dy + dz * dz;
 
-    if (distSq < radius * radius) {
-        auto& targetStats = registry->GetComponent<StatusComponent>(targetID);
-        if (targetStats.hp < targetStats.maxHp) {
-            targetStats.hp += sphere.healAmount;
-            if (targetStats.hp > targetStats.maxHp) targetStats.hp = targetStats.maxHp;
-            DebugLog("Sphere Heal! Target(%d)", targetID);
-            // 回復球は「使い切り」にしたい場合はここでDestroy
-            // pWorld->DestroyEntity(recoveryID);
-            // 「範囲持続回復」にしたい場合はDestroyしない
+    // ヒット！
+    if (distSq < bulletRadius * bulletRadius) {
+        auto& targetStatus = registry->GetComponent<StatusComponent>(targetID);
+        // ====================================================
+         // パターンA: ターゲットが「プレイヤー」の場合
+         // ====================================================
+        if (registry->HasComponent<PlayerComponent>(targetID)) {
+            // プレイヤー専用の無敵時間チェック
+            if (targetStatus.invincibleTimer <= 0.0f) {
+                targetStatus.TakeDamage(bullet.damage);
+                targetStatus.invincibleTimer = 0.5f;
+
+                // プレイヤー用の赤いエフェクト
+                EntityFactory::CreateHitEffect(pWorld, bTrans.position, 5, { 1.0f, 0.2f, 0.0f, 1.0f });
+                DebugLog("Player Hit!");
+
+                // ノックバック処理
+                auto& pComp = registry->GetComponent<PlayerComponent>(targetID);
+                XMVECTOR knockDir;
+                if (registry->HasComponent<PhysicsComponent>(bulletID)) {
+                    auto& bPhy = registry->GetComponent<PhysicsComponent>(bulletID);
+                    knockDir = XMLoadFloat3(&bPhy.velocity);
+                }
+                else {
+                    knockDir = XMVectorSet(0, 0, 1, 0);
+                }
+                knockDir = XMVector3Normalize(XMVectorSetY(knockDir, 0.0f));
+                XMVECTOR knockVel = knockDir * 8.0f;
+                knockVel = XMVectorSetY(knockVel, 5.0f);
+                XMStoreFloat3(&pComp.velocity, knockVel);
+                pComp.isGrounded = false;
+
+                if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
+
+                // 弾を消して終了
+                bullet.isActive = false;
+                pWorld->DestroyEntity(bulletID);
+                return;
+            }
+        }
+        // ====================================================
+        // パターンB: ターゲットが「エネミー」の場合
+        // ====================================================
+        else if (registry->HasComponent<EnemyComponent>(targetID)) {
+            // ダメージ
+            targetStatus.TakeDamage(bullet.damage);
+
+            // エネミー用の青/緑エフェクト
+            EntityFactory::CreateHitEffect(pWorld, bTrans.position, 5, { 0.0f, 1.0f, 1.0f, 1.0f });
+
+            // ノックバック
+            auto& enemy = registry->GetComponent<EnemyComponent>(targetID);
+            if (!enemy.isImmovable && registry->HasComponent<PhysicsComponent>(targetID)) {
+                auto& ePhy = registry->GetComponent<PhysicsComponent>(targetID);
+                XMVECTOR knockDir;
+                if (registry->HasComponent<PhysicsComponent>(bulletID)) {
+                    auto& bPhy = registry->GetComponent<PhysicsComponent>(bulletID);
+                    knockDir = XMLoadFloat3(&bPhy.velocity);
+                }
+                else {
+                    knockDir = XMVectorSet(0, 0, 1, 0);
+                }
+                knockDir = XMVector3Normalize(XMVectorSetY(knockDir, 0.0f));
+                float knockPower = 20.0f / enemy.weight;
+                XMVECTOR v = knockDir * knockPower;
+                v = XMVectorSetY(v, 2.0f / enemy.weight);
+                XMStoreFloat3(&ePhy.velocity, v);
+                enemy.knockbackTimer = 0.2f;
+            }
+
+            // ★死亡判定 (ここが通るようになります！)
+            if (targetStatus.IsDead()) {
+                DebugLog("Enemy(%d) Defeated by Bullet!", targetID);
+
+                if (registry->HasComponent<TransformComponent>(targetID)) {
+                    auto& tf = registry->GetComponent<TransformComponent>(targetID);
+                    EntityFactory::CreateHitEffect(pWorld, tf.position, 20, { 1.0f, 0.2f, 0.2f, 1.0f });
+                }
+
+                // パーツ削除 -> 本体削除
+                DestroyEnemyParts(pWorld, targetID);
+                pWorld->DestroyEntity(targetID);
+
+                if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
+            }
+
+            // 弾を消して終了
+            bullet.isActive = false;
+            pWorld->DestroyEntity(bulletID);
+            return;
         }
     }
 }

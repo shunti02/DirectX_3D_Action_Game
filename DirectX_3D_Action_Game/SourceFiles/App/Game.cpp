@@ -7,6 +7,8 @@
 #include "Scene/GameScene.h"
 #include "Scene/TitleScene.h"
 #include "../ImGui/imgui.h"
+#include <fstream> // ファイル読み書き用
+#include <string>
 
 Game* Game::instance = nullptr;
 
@@ -22,7 +24,8 @@ Game::~Game() {
 }
 
 bool Game::Initialize(HWND hWnd) {
-    pInput->Initialize();
+    m_hWnd = hWnd;
+    pInput->Initialize(hWnd);
     // Graphics初期化
     pGraphics = std::make_unique<Graphics>();
     if (!pGraphics->Initialize(hWnd, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT)) {
@@ -57,13 +60,13 @@ void Game::Update(float dt) {
     if (pAudio) {
         pAudio->Update();
     }
-
     // ImGui描画開始
     pGraphics->BeginUI();
 
     if (pSceneManager) {
         pSceneManager->Update(dt);
     }
+    pInput->ResetMouseWheel();
 }
 
 void Game::Draw() {
@@ -101,4 +104,61 @@ void Game::Shutdown() {
     pSceneManager.reset();
     pAudio.reset();
     pGraphics.reset();
+}
+
+// ★追加: セーブ機能
+void Game::SaveGame() {
+    std::ofstream file("savedata.txt");
+    if (file.is_open()) {
+        // 解放済みステージ数と、現在選択中のプレイヤータイプを保存
+        // (スペース区切りで書き込む)
+        file << m_maxUnlockedStage << " " << (int)m_selectedPlayerType;
+
+        file.close();
+        AppLog::AddLog("[System] Game Saved. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
+    }
+}
+
+// ★追加: ロード機能
+bool Game::LoadGame() {
+    std::ifstream file("savedata.txt");
+    if (file.is_open()) {
+        int loadedType = 0;
+
+        // 解放済みステージ数とプレイヤータイプを読み込む
+        file >> m_maxUnlockedStage >> loadedType;
+
+        // 安全対策: 範囲チェック
+        if (m_maxUnlockedStage < 1) m_maxUnlockedStage = 1;
+        if (m_maxUnlockedStage > 5) m_maxUnlockedStage = 5;
+
+        // プレイヤータイプの反映
+        // (Enumの範囲内かチェック)
+        if (loadedType >= (int)PlayerType::AssaultStriker && loadedType <= (int)PlayerType::PlasmaSniper) {
+            m_selectedPlayerType = (PlayerType)loadedType;
+        }
+        else {
+            m_selectedPlayerType = PlayerType::AssaultStriker; // デフォルト
+        }
+
+        file.close();
+        AppLog::AddLog("[System] Game Loaded. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
+        return true; // ロード成功
+    }
+    return false; // ファイルがない（初回プレイなど）
+}
+
+// ★追加: リセット機能 (NEW GAME)
+void Game::ResetGame() {
+    m_maxUnlockedStage = 1;
+    m_currentStage = 1;
+    m_currentPhase = 1;
+    m_savedPlayerHP = -1;
+
+    // NEW GAME時はプレイヤータイプはデフォルトに戻さない方が親切な場合もありますが、
+    // ここでは完全に初期化するならデフォルトに戻します。
+    // (もしキャラ選択画面から始まるなら、そこで上書きされるので気にしなくてOK)
+    m_selectedPlayerType = PlayerType::AssaultStriker;
+
+    SaveGame(); // リセットした状態を保存
 }

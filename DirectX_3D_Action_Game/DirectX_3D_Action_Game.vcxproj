@@ -144,7 +144,10 @@
     <ClCompile Include="SourceFiles\ECS\ECS.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\ActionSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\CameraSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\EnemyAnimationSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\EnemySystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\MovingSystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\ParticleSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PhysicsSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PlayerAnimationSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PlayerSystem.cpp" />
@@ -156,8 +159,11 @@
     <ClCompile Include="SourceFiles\Engine\Graphics.cpp" />
     <ClCompile Include="SourceFiles\Engine\Input.cpp" />
     <ClCompile Include="SourceFiles\Engine\SkyBox.cpp" />
+    <ClCompile Include="SourceFiles\Scene\CharacterSelectScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\GameScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\ResultScene.cpp" />
+    <ClCompile Include="SourceFiles\Scene\SceneManager.cpp" />
+    <ClCompile Include="SourceFiles\Scene\StageSelectScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\TitleScene.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -169,10 +175,15 @@
     <ClInclude Include="HeaderFiles\ECS\Components\ActionComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\AttackBoxComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\AttackSphereComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\BulletComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\CameraComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\ColliderComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\EnemyComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\EnemyPartComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\MovingComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\ParticleComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\PhysicsComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PlayerPartComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\RecoveryBoxComponent.h" />
@@ -184,7 +195,10 @@
     <ClInclude Include="HeaderFiles\ECS\System.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\ActionSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\CameraSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\EnemyAnimationSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\EnemySystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\MovingSystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\ParticleSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerAnimationSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerSystem.h" />
@@ -200,9 +214,11 @@
     <ClInclude Include="HeaderFiles\Engine\Vertex.h" />
     <ClInclude Include="HeaderFiles\Game\EntityFactory.h" />
     <ClInclude Include="HeaderFiles\Scene\BaseScene.h" />
+    <ClInclude Include="HeaderFiles\Scene\CharacterSelectScene.h" />
     <ClInclude Include="HeaderFiles\Scene\GameScene.h" />
     <ClInclude Include="HeaderFiles\Scene\ResultScene.h" />
     <ClInclude Include="HeaderFiles\Scene\SceneManager.h" />
+    <ClInclude Include="HeaderFiles\Scene\StageSelectScene.h" />
     <ClInclude Include="HeaderFiles\Scene\TitleScene.h" />
     <ClInclude Include="ImGui\imconfig.h" />
     <ClInclude Include="ImGui\imgui.h" />
