@@ -146,6 +146,7 @@
     <ClCompile Include="SourceFiles\ECS\Systems\CameraSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\EnemyAnimationSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\EnemySystem.cpp" />
+    <ClCompile Include="SourceFiles\ECS\Systems\MovingSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\ParticleSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PhysicsSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\PlayerAnimationSystem.cpp" />
@@ -180,6 +181,7 @@
     <ClInclude Include="HeaderFiles\ECS\Components\EnemyComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\EnemyPartComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\MeshComponent.h" />
+    <ClInclude Include="HeaderFiles\ECS\Components\MovingComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\ParticleComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PhysicsComponent.h" />
     <ClInclude Include="HeaderFiles\ECS\Components\PlayerComponent.h" />
@@ -195,6 +197,7 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\CameraSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\EnemyAnimationSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\EnemySystem.h" />
+    <ClInclude Include="HeaderFiles\ECS\Systems\MovingSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\ParticleSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PhysicsSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\PlayerAnimationSystem.h" />

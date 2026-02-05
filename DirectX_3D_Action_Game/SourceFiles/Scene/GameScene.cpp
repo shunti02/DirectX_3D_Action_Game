@@ -16,6 +16,7 @@
 #include "ECS/Components/CameraComponent.h"
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Systems/ParticleSystem.h"
+#include "ECS/Components/MovingComponent.h"
 
 // システム
 #include "ECS/Systems/RenderSystem.h"
@@ -27,6 +28,7 @@
 #include "ECS/Systems/PhysicsSystem.h"
 #include "ECS/Systems/ActionSystem.h"
 #include "ECS/Systems/UISystem.h"
+#include "ECS/Systems/MovingSystem.h"
 
 #include <iostream>
 #include <cstdlib>
@@ -47,7 +49,7 @@ void GameScene::Initialize() {
     pWorld->AddSystem<ActionSystem>()->Init(pWorld.get());
     pWorld->AddSystem<PhysicsSystem>()->Init(pWorld.get());
     pWorld->AddSystem<ParticleSystem>()->Init(pWorld.get());
-
+    pWorld->AddSystem<MovingSystem>()->Init(pWorld.get());
     m_pEnemyAnimSystem = pWorld->AddSystem<EnemyAnimationSystem>();
     m_pEnemyAnimSystem->Init(pWorld.get());
 
@@ -347,9 +349,40 @@ void GameScene::Initialize() {
     if (currentStage == 3) { groundColor = { 0.1f, 0.1f, 0.1f, 1.0f }; wallColor = colCyber; }
     if (currentStage == 5) { groundColor = { 0.2f, 0.0f, 0.0f, 1.0f }; wallColor = colMagma; }
 
-    // 床
-    EntityFactory::CreateEntity(pWorld.get(), { .type = "Ground", .position = {0,-1,0}, .scale = {60, 1, 60}, .color = groundColor });
+    // ★修正: 床 (ブロック敷き詰め)
+    // エリアサイズ 60x60 を 2x2 のブロックで埋める (-30 ~ 30)
+    for (int x = -30; x < 30; x += 2) {
+        for (int z = -30; z < 30; z += 2) {
 
+            // ステージ5 (ラスボス) は中央付近を少し穴あきにするギミック
+            if (currentStage == 5) {
+                // 中央から半径10以内かつ、特定のパターンの場所をスキップ
+                if (abs(x) < 10 && abs(z) < 10 && (abs(x + z) % 4 != 0)) {
+                    continue; // 穴を空ける
+                }
+            }
+
+            EntityID floorID = EntityFactory::CreateEntity(pWorld.get(), {
+                .type = "Ground",
+                .position = { (float)x + 1.0f, -1.0f, (float)z + 1.0f }, // ブロックの中心座標
+                .scale = { 2.0f, 1.0f, 2.0f }, // 2x2のサイズ (高さ1)
+                .color = groundColor
+                });
+
+            // ステージ4 (廃墟) なら、一部の床を上下に動かす
+            if (currentStage == 4) {
+                // 10%の確率で動く床にする
+                if (rand() % 100 < 2) {
+                    pWorld->AddComponent<MovingComponent>(floorID, MovingComponent{
+                        .startPos = { (float)x + 1.0f, -1.0f, (float)z + 1.0f },
+                        .moveVec  = { 0.0f, 3.0f, 0.0f }, // 上に3m動く
+                        .speed    = 1.0f + (rand()%10)/10.0f,
+                        .time     = (float)(rand()%100)
+                    });
+                }
+            }
+        }
+    }
     // 外壁 (エリア制限)
     CreateWall(30.0f, 0.0f, 1.0f, 60.0f, 10.0f, wallColor); // 右
     CreateWall(-30.0f, 0.0f, 1.0f, 60.0f, 10.0f, wallColor); // 左
@@ -470,6 +503,25 @@ void GameScene::Update(float dt) {
 
     if (m_startTimer < waitTime) {
         // === 準備中 ===
+        // ---------------------------------------------------------
+        // ★追加: プレイヤーを強制的に接地・待機状態にする
+        // ---------------------------------------------------------
+        // これをしないと、物理演算が止まっているため「空中にいる」と判定され、
+        // 落下モーションなどが再生されてしまいます。
+        auto registry = pWorld->GetRegistry();
+        for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+            if (registry->HasComponent<PlayerComponent>(id)) {
+                auto& pc = registry->GetComponent<PlayerComponent>(id);
+                pc.isGrounded = true; // 接地フラグを強制ON (これでIdleモーションになる)
+
+                // 念のため速度もゼロに
+                if (registry->HasComponent<PhysicsComponent>(id)) {
+                    auto& phy = registry->GetComponent<PhysicsComponent>(id);
+                    phy.velocity = { 0.0f, 0.0f, 0.0f };
+                }
+            }
+        }
+        
         // ゲームロジックは止める
         if (m_pAnimSystem) m_pAnimSystem->Update(dt);
         if (m_pEnemyAnimSystem) m_pEnemyAnimSystem->Update(dt);

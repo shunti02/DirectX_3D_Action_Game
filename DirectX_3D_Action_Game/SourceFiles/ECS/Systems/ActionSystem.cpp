@@ -211,6 +211,9 @@ void ActionSystem::Update(float dt) {
 
                         XMFLOAT3 dirF; XMStoreFloat3(&dirF, camDir);
 
+                        // ★追加: マズルフラッシュ発生
+                        EntityFactory::CreateMuzzleFlash(pWorld, spawnPos, dirF);
+
                         // 弾生成
                         EntityFactory::CreatePlayerBullet(pWorld, spawnPos, dirF, dmg);
 

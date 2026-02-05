@@ -150,6 +150,9 @@
     <ClCompile Include="SourceFiles\ECS\Systems\EnemyAnimationSystem.cpp">
       <Filter>SourceFiles\ECS\Systems</Filter>
     </ClCompile>
+    <ClCompile Include="SourceFiles\ECS\Systems\MovingSystem.cpp">
+      <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="HeaderFiles\Engine\Graphics.h">
@@ -327,6 +330,12 @@
       <Filter>HeaderFiles\ECS\Components</Filter>
     </ClInclude>
     <ClInclude Include="HeaderFiles\ECS\Systems\EnemyAnimationSystem.h">
+      <Filter>HeaderFiles\ECS\Systems</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Components\MovingComponent.h">
+      <Filter>HeaderFiles\ECS\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\ECS\Systems\MovingSystem.h">
       <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
   </ItemGroup>
