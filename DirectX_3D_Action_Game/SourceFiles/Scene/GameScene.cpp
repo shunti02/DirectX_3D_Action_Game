@@ -175,7 +175,7 @@ void GameScene::Initialize() {
     auto& camComp = pWorld->GetComponent<CameraComponent>(cameraID);
     camComp.targetEntityID = playerID;
 
-   
+
 
 
     // ---------------------------------------------------------
@@ -368,19 +368,6 @@ void GameScene::Initialize() {
                 .scale = { 2.0f, 1.0f, 2.0f }, // 2x2のサイズ (高さ1)
                 .color = groundColor
                 });
-
-            // ステージ4 (廃墟) なら、一部の床を上下に動かす
-            if (currentStage == 4) {
-                // 10%の確率で動く床にする
-                if (rand() % 100 < 2) {
-                    pWorld->AddComponent<MovingComponent>(floorID, MovingComponent{
-                        .startPos = { (float)x + 1.0f, -1.0f, (float)z + 1.0f },
-                        .moveVec  = { 0.0f, 3.0f, 0.0f }, // 上に3m動く
-                        .speed    = 1.0f + (rand()%10)/10.0f,
-                        .time     = (float)(rand()%100)
-                    });
-                }
-            }
         }
     }
     // 外壁 (エリア制限)
@@ -521,7 +508,7 @@ void GameScene::Update(float dt) {
                 }
             }
         }
-        
+
         // ゲームロジックは止める
         if (m_pAnimSystem) m_pAnimSystem->Update(dt);
         if (m_pEnemyAnimSystem) m_pEnemyAnimSystem->Update(dt);
