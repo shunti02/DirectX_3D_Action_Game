@@ -277,13 +277,21 @@ void CharacterSelectScene::Draw() {
         DrawStatBar(L"SPD", stats[m_currentSelectIndex][2], 5, barStartY + gapY * 2, 0xFF00FFFF);
 
         // à–¾•¶
-        const wchar_t* descs[] = {
-            L"Standard model equipped with a Beam Sword.\nEasy to handle for any pilot.",
-            L"Heavy armor model with a Gravity Hammer.\nOverwhelming destructive power but slow.",
-            L"High-mobility model with a Plasma Rifle.\nSnipes enemies from a distance."
+        const wchar_t* descsLine1[] = {
+            L"Standard model equipped with a Beam Sword.",
+            L"Heavy armor model with a Gravity Hammer.",
+            L"High-mobility model with a Plasma Rifle."
         };
-        pGraphics->DrawString(descs[m_currentSelectIndex], 650.0f, panelY + 60.0f, 24.0f, 0xFFEEEEEE);
-
+        const wchar_t* descsLine2[] = {
+            L"Easy to handle for any pilot.",
+            L"Overwhelming destructive power but slow.",
+            L"Snipes enemies from a distance."
+        };
+        float desc1Width = wcslen(descsLine1[m_currentSelectIndex]) * 14.0f;
+        float desc2Width = wcslen(descsLine2[m_currentSelectIndex]) * 14.0f;
+        pGraphics->DrawString(descsLine1[m_currentSelectIndex], centerX - desc1Width / 2, panelY + 110.0f, 24.0f, 0xFFEEEEEE);
+        pGraphics->DrawString(descsLine2[m_currentSelectIndex], centerX - desc2Width / 2, panelY + 145.0f, 24.0f, 0xFFEEEEEE);
+        // ==========================================
         // Œˆ’èƒ{ƒ^ƒ“ˆÄ“à (“_–Å)
         uint32_t pressColor = (static_cast<uint32_t>(alpha * 255.0f) << 24) | 0x00FFFFFF;
         pGraphics->DrawString(L"- PRESS ENTER to LAUNCH -", centerX - 180.0f, 680.0f, 32.0f, pressColor);

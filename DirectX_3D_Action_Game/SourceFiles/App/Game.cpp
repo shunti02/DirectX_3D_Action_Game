@@ -32,8 +32,8 @@ bool Game::Initialize(HWND hWnd) {
         return false;
     }
 
-	// ImGui初期化
-	pGraphics->InitUI(hWnd);
+    // ImGui初期化
+    pGraphics->InitUI(hWnd);
 
     //Audio初期化
     pAudio = std::make_unique<Audio>();
@@ -75,24 +75,24 @@ void Game::Draw() {
     // 画面クリア（背景色：ダークグレー）
     pGraphics->BeginFrame(0.1f, 0.1f, 0.1f, 1.0f);
 
-	
+
 
     // シーン描画
     if (pSceneManager) {
         pSceneManager->Draw();
     }
-
+#ifdef _DEBUG
     //デバッグUIのテスト表示
-	ImGui::Begin("Debug Menu");//ウィンドウ表示
-	
+    ImGui::Begin("Debug Menu");//ウィンドウ表示
+
     ImGui::Text("Hello, ImGui!");//テキスト表示
     ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate); // FPS表示
     // 背景色を変えるテスト
     static float color[4] = { 0.1f,0.1f,0.1f,1.0f };
-	ImGui::ColorEdit3("BG Color", color);//カラーパレット表示
+    ImGui::ColorEdit3("BG Color", color);//カラーパレット表示
     //ウィンドウ終了
     ImGui::End();
-
+#endif
     //UI描画終了
     pGraphics->EndUI();
 

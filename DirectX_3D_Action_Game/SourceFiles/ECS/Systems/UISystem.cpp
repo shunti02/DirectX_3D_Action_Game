@@ -36,6 +36,7 @@ void UISystem::Update(float dt) {
     // 1. ステータスモニター
     // -----------------------------------------------------
     // ImGuiウィンドウの開始
+#ifdef _DEBUG
     ImGui::Begin("Game Status Monitor");
 
     // --- プレイヤー情報の表示 ---
@@ -130,6 +131,7 @@ void UISystem::Update(float dt) {
 
     ImGui::EndChild();
     ImGui::End(); // Debug Log 終了
+#endif
 }
 
 void UISystem::Draw(Graphics* pGraphics) {
