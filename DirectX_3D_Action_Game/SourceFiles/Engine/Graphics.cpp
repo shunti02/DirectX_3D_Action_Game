@@ -1,9 +1,5 @@
-/*===================================================================
-//ファイル:Graphics.cpp
-//概要:Graphicsクラスの実装 (シェーダー読み込み機能追加版)
-=====================================================================*/
 #include "Engine/Graphics.h"
-#include <iostream> // デバッグ出力用
+#include <iostream>
 #include "../ImGui/imgui.h"
 #include "../ImGui/imgui_impl_win32.h"
 #include "../ImGui/imgui_impl_dx11.h"
@@ -19,10 +15,6 @@ Graphics::~Graphics() {
 
 bool Graphics::Initialize(HWND hWnd, int width, int height)
 {
-    // ... (既存の初期化コードは変更なし。そのまま維持してください) ...
-    // ※もし全文置き換える場合は、以前のInitializeの中身をここにコピーしてください。
-    //   ここでは省略せずに書いておきますが、以前と同じ内容です。
-
     HRESULT hr;
     DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferCount = 1;
@@ -69,7 +61,6 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     vp.TopLeftY = 0.0f;
     pContext->RSSetViewports(1, &vp);
 
-    // ブレンドステート作成（アルファブレンド有効）
     D3D11_BLEND_DESC blendDesc = {};
     blendDesc.RenderTarget[0].BlendEnable = TRUE;
     blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -86,14 +77,13 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     float blendFactor[4] = { 0.0f,0.0f,0.0f,0.0f };
     pContext->OMSetBlendState(pBlendState.Get(), blendFactor, 0xffffffff);
 
-    // ★追加: ラスタライザーステートの作成（両面描画設定）
     D3D11_RASTERIZER_DESC rasterDesc = {};
     rasterDesc.AntialiasedLineEnable = FALSE;
-    rasterDesc.CullMode = D3D11_CULL_NONE; // ★重要: "NONE" にすると裏面も描画される
+    rasterDesc.CullMode = D3D11_CULL_NONE;
     rasterDesc.DepthBias = 0;
     rasterDesc.DepthBiasClamp = 0.0f;
     rasterDesc.DepthClipEnable = TRUE;
-    rasterDesc.FillMode = D3D11_FILL_SOLID; // ポリゴンの中身を塗りつぶす
+    rasterDesc.FillMode = D3D11_FILL_SOLID; 
     rasterDesc.FrontCounterClockwise = TRUE;
     rasterDesc.MultisampleEnable = FALSE;
     rasterDesc.ScissorEnable = FALSE;
@@ -102,16 +92,14 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     hr = pDevice->CreateRasterizerState(&rasterDesc, &pRasterizerState);
     if (FAILED(hr)) return false;
 
-    // 作成したステートをセット
     pContext->RSSetState(pRasterizerState.Get());
 
-    // 1. 深度ステンシルテクスチャの作成
     D3D11_TEXTURE2D_DESC depthBufferDesc = {};
     depthBufferDesc.Width = width;
     depthBufferDesc.Height = height;
     depthBufferDesc.MipLevels = 1;
     depthBufferDesc.ArraySize = 1;
-    depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; // 深度24bit, ステンシル8bit
+    depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
     depthBufferDesc.SampleDesc.Count = 1;
     depthBufferDesc.SampleDesc.Quality = 0;
     depthBufferDesc.Usage = D3D11_USAGE_DEFAULT;
@@ -122,27 +110,22 @@ bool Graphics::Initialize(HWND hWnd, int width, int height)
     hr = pDevice->CreateTexture2D(&depthBufferDesc, NULL, &pDepthStencilBuffer);
     if (FAILED(hr)) return false;
 
-    // 2. 深度ステンシルビューの作成
     hr = pDevice->CreateDepthStencilView(pDepthStencilBuffer.Get(), NULL, &pDepthStencilView);
     if (FAILED(hr)) return false;
 
-    // 3. 深度ステンシルステートの作成（深度テストを有効にする設定）
     D3D11_DEPTH_STENCIL_DESC dsDesc = {};
-    dsDesc.DepthEnable = TRUE; // ★重要: 深度テストON
-    dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL; // 書き込み許可
-    dsDesc.DepthFunc = D3D11_COMPARISON_LESS; // 手前にあるものを描画
+    dsDesc.DepthEnable = TRUE; 
+    dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    dsDesc.DepthFunc = D3D11_COMPARISON_LESS; 
 
     dsDesc.StencilEnable = FALSE;
 
     hr = pDevice->CreateDepthStencilState(&dsDesc, &pDepthStencilState);
     if (FAILED(hr)) return false;
 
-    // ステートをセット
     pContext->OMSetDepthStencilState(pDepthStencilState.Get(), 1);
 
-    // 4. レンダーターゲットと深度ビューを紐づけてセット
     pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), pDepthStencilView.Get());
-    // ★追加: Direct2Dの初期化
     if (!InitD2D(pSwapChain.Get())) {
         MessageBox(NULL, "Direct2D Init Failed", "Error", MB_OK);
         return false;
@@ -154,15 +137,12 @@ void Graphics::BeginFrame(float r, float g, float b, float a) {
     pContext->OMSetRenderTargets(1, pRenderTargetView.GetAddressOf(), pDepthStencilView.Get());
     const float color[] = { r, g, b, a };
     pContext->ClearRenderTargetView(pRenderTargetView.Get(), color);
-    //深度バッファクリア (1.0f = 最も奥、で初期化)
     pContext->ClearDepthStencilView(pDepthStencilView.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 }
 
 void Graphics::EndFrame() {
     pSwapChain->Present(1, 0);
 }
-
-// シェーダーコンパイル用ヘルパー関数
 bool Graphics::CompileShaderFromFile(const std::wstring& filename, const std::string& entryPoint, const std::string& shaderModel, ID3DBlob** ppBlobOut)
 {
     DWORD dwShaderFlags = D3DCOMPILE_ENABLE_STRICTNESS;
@@ -192,23 +172,18 @@ bool Graphics::InitD2D(IDXGISwapChain* swapChain)
 {
     HRESULT hr;
 
-    // 1. D2Dファクトリ作成
     D2D1_FACTORY_OPTIONS options = {};
     hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,__uuidof(ID2D1Factory),&options,reinterpret_cast<void**>(pD2DFactory.GetAddressOf())
     );
     if (FAILED(hr)) return false;
 
-    // 2. DWriteファクトリ作成 (フォント管理)
     hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(pDWriteFactory.GetAddressOf()));
     if (FAILED(hr)) return false;
 
-    // 3. バックバッファをDXGIサーフェスとして取得
     ComPtr<IDXGISurface> pBackBuffer;
     hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
     if (FAILED(hr)) return false;
 
-    // 4. DXGIサーフェスからD2Dレンダーターゲット作成
-    // これにより、Direct3Dの画面に直接Direct2Dで描画できるようになる
     D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
         D2D1_RENDER_TARGET_TYPE_DEFAULT,
         D2D1::PixelFormat(DXGI_FORMAT_UNKNOWN, D2D1_ALPHA_MODE_PREMULTIPLIED)
@@ -217,45 +192,38 @@ bool Graphics::InitD2D(IDXGISwapChain* swapChain)
     hr = pD2DFactory->CreateDxgiSurfaceRenderTarget(pBackBuffer.Get(), &props, &pD2DRenderTarget);
     if (FAILED(hr)) return false;
 
-    // 5. 標準フォント設定 (メイリオ, 24px)
     hr = pDWriteFactory->CreateTextFormat(
-        L"Meiryo",                // フォント名
+        L"Meiryo", 
         NULL,
         DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL,
-        24.0f,                    // サイズ
-        L"ja-jp",                 // ロケール
+        24.0f,
+        L"ja-jp",
         &pTextFormat
     );
     if (FAILED(hr)) return false;
 
-    // 6. ブラシ作成 (色は描画時に変えるのでとりあえず白で)
     hr = pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::White), &pBrush);
     if (FAILED(hr)) return false;
 
     return true;
 }
 
-// 頂点シェーダー作成
 bool Graphics::CreateVertexShader(const std::wstring& filename, ID3D11VertexShader** ppVertexShader, ID3D11InputLayout** ppInputLayout)
 {
     ComPtr<ID3DBlob> pVSBlob;
-    // hlslファイルをコンパイル (エントリーポイント:main, モデル:vs_5_0)
     if (!CompileShaderFromFile(filename, "main", "vs_5_0", &pVSBlob)) {
         MessageBoxW(NULL, L"Failed to compile vertex shader", filename.c_str(), MB_OK);
         return false;
     }
-
-    // シェーダーオブジェクト作成
     HRESULT hr = pDevice->CreateVertexShader(pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize(), nullptr, ppVertexShader);
     if (FAILED(hr)) return false;
 
-    // 入力レイアウト（頂点データの形式）の定義
-    // Vertex.h の構造と合わせる必要があります
     D3D11_INPUT_ELEMENT_DESC layout[] = {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 0,  D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
 
     hr = pDevice->CreateInputLayout(
@@ -268,8 +236,6 @@ bool Graphics::CreateVertexShader(const std::wstring& filename, ID3D11VertexShad
 
     return true;
 }
-
-// ピクセルシェーダー作成
 bool Graphics::CreatePixelShader(const std::wstring& filename, ID3D11PixelShader** ppPixelShader)
 {
     ComPtr<ID3DBlob> pPSBlob;
@@ -287,7 +253,6 @@ bool Graphics::CreatePixelShader(const std::wstring& filename, ID3D11PixelShader
 bool Graphics::CreateGeometryShader(const std::wstring& filename, ID3D11GeometryShader** ppGeometryShader)
 {
     ComPtr<ID3DBlob> pGSBlob;
-    // エントリーポイント: main, シェーダーモデル: gs_5_0
     if (!CompileShaderFromFile(filename, "main", "gs_5_0", &pGSBlob)) {
         MessageBoxW(NULL, L"Failed to compile geometry shader", filename.c_str(), MB_OK);
         return false;
@@ -312,8 +277,6 @@ bool Graphics::CreateConstantBuffer(UINT size, ID3D11Buffer** ppBuffer)
     HRESULT hr = pDevice->CreateBuffer(&bd, nullptr, ppBuffer);
     return SUCCEEDED(hr);
 }
-
-// 頂点バッファ作成
 bool Graphics::CreateVertexBuffer(const std::vector<Vertex>& vertices, ID3D11Buffer** ppBuffer)
 {
     if (vertices.empty()) return false;
@@ -347,32 +310,23 @@ bool Graphics::CreateIndexBuffer(const std::vector<UINT>& indices, ID3D11Buffer*
     HRESULT hr = pDevice->CreateBuffer(&bd, &initData, ppBuffer);
     return SUCCEEDED(hr);
 }
-
-// ---------------------------------------------------------
-// ImGui管理関数の実装
-// ---------------------------------------------------------
 void Graphics::InitUI(HWND hWnd)
 {
-    // ImGuiコンテキスト作成
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
-    // ImGuiスタイル設定
     ImGui::StyleColorsDark();
-    // Win32 + DirectX11用の初期化
     ImGui_ImplWin32_Init(hWnd);
     ImGui_ImplDX11_Init(pDevice.Get(), pContext.Get());
 }
 void Graphics::BeginUI()
 {
-    // ImGuiフレーム開始
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 }
 void Graphics::EndUI()
 {
-    // ImGuiフレーム終了・描画
     ImGui::Render();
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
@@ -393,39 +347,33 @@ void Graphics::EndDraw2D()
 
 void Graphics::DrawString(const std::wstring& text, float x, float y, float size, uint32_t color)
 {
-    // ファクトリなどが無ければ中止
     if (!pD2DRenderTarget || !pDWriteFactory || !pBrush) return;
 
-    // 1. 指定されたサイズで一時的なフォントフォーマットを作成
-    // (※本来はMapなどでキャッシュすべきですが、今回は簡易的に毎回作成します)
     ComPtr<IDWriteTextFormat> localFormat;
     HRESULT hr = pDWriteFactory->CreateTextFormat(
-        L"Meiryo",                // フォント名
+        L"Meiryo",
         NULL,
         DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL,
         DWRITE_FONT_STRETCH_NORMAL,
-        size,                     // ★引数のサイズを使う！
+        size,
         L"ja-jp",
         &localFormat
     );
     if (FAILED(hr)) return;
 
-    // 2. ブラシの色設定
     float a = ((color >> 24) & 0xFF) / 255.0f;
     float b = ((color >> 16) & 0xFF) / 255.0f;
     float g = ((color >> 8) & 0xFF) / 255.0f;
     float r = (color & 0xFF) / 255.0f;
     pBrush->SetColor(D2D1::ColorF(r, g, b, a));
 
-    // 3. 描画エリア (文字が切れないように十分大きく取る)
     D2D1_RECT_F layoutRect = D2D1::RectF(x, y, x + 2000.0f, y + 2000.0f);
 
-    // 4. 描画実行
     pD2DRenderTarget->DrawText(
         text.c_str(),
         static_cast<UINT32>(text.length()),
-        localFormat.Get(),        // ★作成したフォーマットを使う
+        localFormat.Get(),
         layoutRect,
         pBrush.Get()
     );
@@ -433,29 +381,22 @@ void Graphics::DrawString(const std::wstring& text, float x, float y, float size
 
 void Graphics::DrawRect(float x, float y, float w, float h, uint32_t color)
 {
-    // 変数名は pD2DRenderTarget (ComPtr)
     if (!pD2DRenderTarget) return;
 
-    // 色分解 (0xAARRGGBB -> r, g, b, a)
     float a = ((color >> 24) & 0xFF) / 255.0f;
     float r = ((color >> 16) & 0xFF) / 255.0f;
     float g = ((color >> 8) & 0xFF) / 255.0f;
     float b = (color & 0xFF) / 255.0f;
 
-    // ブラシ作成
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
     pD2DRenderTarget->CreateSolidColorBrush(D2D1::ColorF(r, g, b, a), &brush);
 
     if (brush) {
         D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
-        // FillRectangle = 中身を塗りつぶす
         pD2DRenderTarget->FillRectangle(rect, brush.Get());
     }
 }
 
-// ---------------------------------------------------------
-// 矩形描画 (枠線のみ)
-// ---------------------------------------------------------
 void Graphics::DrawRectOutline(float x, float y, float w, float h, float thickness, uint32_t color)
 {
     if (!pD2DRenderTarget) return;
@@ -470,14 +411,9 @@ void Graphics::DrawRectOutline(float x, float y, float w, float h, float thickne
 
     if (brush) {
         D2D1_RECT_F rect = D2D1::RectF(x, y, x + w, y + h);
-        // DrawRectangle = 枠線を描く
         pD2DRenderTarget->DrawRectangle(rect, brush.Get(), thickness);
     }
 }
-
-// ※ FillRect は DrawRect (塗りつぶし) と同じ機能として実装する場合、
-//    以下のようにエイリアスにするか、削除して呼び出し側を修正する。
-//    今回は Graphics.h に宣言があるなら実装を残しておく。
 void Graphics::FillRect(float x, float y, float w, float h, uint32_t color)
 {
     DrawRect(x, y, w, h, color);

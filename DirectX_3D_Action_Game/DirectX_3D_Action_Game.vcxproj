@@ -154,12 +154,13 @@
     <ClCompile Include="SourceFiles\ECS\Systems\RenderSystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\Systems\UISystem.cpp" />
     <ClCompile Include="SourceFiles\ECS\World.cpp" />
+    <ClCompile Include="SourceFiles\Engine\AnimationManager.cpp" />
     <ClCompile Include="SourceFiles\Engine\Audio.cpp" />
     <ClCompile Include="SourceFiles\Engine\GeometryGenerator.cpp" />
     <ClCompile Include="SourceFiles\Engine\Graphics.cpp" />
     <ClCompile Include="SourceFiles\Engine\Input.cpp" />
     <ClCompile Include="SourceFiles\Engine\SkyBox.cpp" />
-    <ClCompile Include="SourceFiles\Scene\CharacterSelectScene.cpp" />
+    <ClCompile Include="SourceFiles\Scene\CustomizeScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\GameScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\ResultScene.cpp" />
     <ClCompile Include="SourceFiles\Scene\SceneManager.cpp" />
@@ -167,6 +168,7 @@
     <ClCompile Include="SourceFiles\Scene\TitleScene.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="External\json.hpp" />
     <ClInclude Include="HeaderFiles\App\Game.h" />
     <ClInclude Include="HeaderFiles\App\Main.h" />
     <ClInclude Include="HeaderFiles\ECS\AllComponent.h" />
@@ -205,6 +207,7 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\RenderSystem.h" />
     <ClInclude Include="HeaderFiles\ECS\Systems\UISystem.h" />
     <ClInclude Include="HeaderFiles\ECS\World.h" />
+    <ClInclude Include="HeaderFiles\Engine\AnimationManager.h" />
     <ClInclude Include="HeaderFiles\Engine\Audio.h" />
     <ClInclude Include="HeaderFiles\Engine\Colors.h" />
     <ClInclude Include="HeaderFiles\Engine\GeometryGenerator.h" />
@@ -214,7 +217,7 @@
     <ClInclude Include="HeaderFiles\Engine\Vertex.h" />
     <ClInclude Include="HeaderFiles\Game\EntityFactory.h" />
     <ClInclude Include="HeaderFiles\Scene\BaseScene.h" />
-    <ClInclude Include="HeaderFiles\Scene\CharacterSelectScene.h" />
+    <ClInclude Include="HeaderFiles\Scene\CustomizeScene.h" />
     <ClInclude Include="HeaderFiles\Scene\GameScene.h" />
     <ClInclude Include="HeaderFiles\Scene\ResultScene.h" />
     <ClInclude Include="HeaderFiles\Scene\SceneManager.h" />
@@ -246,6 +249,15 @@
     </CustomBuild>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Assets\Animations\AttackRight.json" />
+    <None Include="Assets\Animations\Dead.json" />
+    <None Include="Assets\Animations\Hurt.json" />
+    <None Include="Assets\Animations\Idle.json" />
+    <None Include="Assets\Animations\JumpDown.json" />
+    <None Include="Assets\Animations\JumpUp.json" />
+    <None Include="Assets\Animations\Move.json" />
+    <None Include="Assets\Animations\ShootLeft.json" />
+    <None Include="Assets\Animations\ShootRight.json" />
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
@@ -261,6 +273,11 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
     </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\Animations\AttackLeft.json">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

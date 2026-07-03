@@ -1,15 +1,3 @@
-/*===================================================================
-//ファイル:Main.cpp
-//制作日:2025/12/05
-//概要:アプリケーションのエントリーポイント、ウィンドウ生成とメインループを管理する
-//制作者:伊藤駿汰
-//-------------------------------------------------------------------
-//更新履歴:
-//2025/12/05:新規作成、ウィンドウ表示機能の実装
-//2025/12/05:デバッグコンソールの実装
-//2025/12/05:FPS管理実装
-//2025/12/07:Mainの機能を移行Gameクラスを起動するのみに変更
-=====================================================================*/
 #include "App/Main.h"
 #include "App/Game.h"
 #include <iostream>
@@ -21,7 +9,7 @@
 
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-// ★追加: ログ機能の実装
+//ログ
 namespace AppLog {
     std::vector<std::string> logs;
 
@@ -33,14 +21,11 @@ namespace AppLog {
         buf[IM_ARRAYSIZE(buf) - 1] = 0;
         va_end(args);
 
-        // コンソールにも出す(念のため)
         OutputDebugString(buf);
         OutputDebugString("\n");
 
-        // リストに追加
         logs.push_back(std::string(buf));
 
-        // ログが増えすぎたら古いものを消す (最大1000行)
         if (logs.size() > 1000) {
             logs.erase(logs.begin());
         }
@@ -54,28 +39,22 @@ namespace AppLog {
 //内部変数・定数
 ------------------------------------------------------------*/
 namespace {
-    std::unique_ptr<Game> g_Game;//ゲーム管理クラス
+    std::unique_ptr<Game> g_Game;
     //FPS管理用
-    LARGE_INTEGER g_TimeFreq;//時間計測の周波数
-    LARGE_INTEGER g_TimeStart;//計測開始時間
-    LARGE_INTEGER g_TimeEnd;//計測終了時間
-    float g_FrameTime = 0.0f;//1フレームにかかった時間（秒）
+    LARGE_INTEGER g_TimeFreq;
+    LARGE_INTEGER g_TimeStart;
+    LARGE_INTEGER g_TimeEnd;
+    float g_FrameTime = 0.0f;
 }
 
 //プロトタイプ宣言
 void InitFPS();
 bool IsFrameReady();
-/*-----------------------------------------------------------------------------
-//WinMain
---------------------------------------------------------------------------------*/
-
-
 //エントリーポイント
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-	//メモリーリークチェックを有効化
+	//メモリーリークチェック
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
-    //タイマー精度向上
     timeBeginPeriod(1);
 
     //ウィンドウクラス登録
@@ -89,7 +68,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     if (!RegisterClassEx(&wc)) return -1;
 
     //ウィンドウ生成
-    //ウィンドウサイズの調整
     RECT rc = { 0, 0, Config::SCREEN_WIDTH, Config::SCREEN_HEIGHT };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
 
@@ -101,7 +79,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     if (!hWnd) return -1;
 
-    // 4. ウィンドウ表示
+    //ウィンドウ表示
     ShowWindow(hWnd, nCmdShow);
     UpdateWindow(hWnd);
 
@@ -117,7 +95,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             DispatchMessage(&msg);
         }
         else {
-            //フレーム更新タイミング待ち
             if (!IsFrameReady())continue;
             //Gameクラスの更新・描画
             Update(g_FrameTime);
@@ -126,7 +103,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
     //終了処理
     UnInit();
-    //タイマー設定を戻す
     timeEndPeriod(1);
 
     return (int)msg.wParam;
@@ -145,12 +121,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (wParam == VK_ESCAPE) PostQuitMessage(0);
         return 0;
 
-        // ★追加: マウスホイール処理
+        //マウスホイール処理
     case WM_MOUSEWHEEL:
         if (auto game = Game::GetInstance()) {
             if (auto input = game->GetInput()) {
-                // ホイールの回転量を取得 (120の倍数が返ってくる)
-                // GET_WHEEL_DELTA_WPARAM マクロで上位ワードを取得
                 float delta = (float)GET_WHEEL_DELTA_WPARAM(wParam);
                 input->AddMouseWheelDelta(delta);
             }
@@ -160,10 +134,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
-
-/*----------------------------------------------------------
-//ラッパー関数群
--------------------------------------------------------------*/
 
 void Init(HWND hWnd)
 {
@@ -192,28 +162,21 @@ void Draw()
     if (g_Game) g_Game->Draw();
 }
 
-//FPS制御関数の定義
+//FPS制御
 void InitFPS()
 {
-    //パフォーマンスカウンタの周波数を取得
     QueryPerformanceFrequency(&g_TimeFreq);
-    //現在のカウントを取得
     QueryPerformanceCounter(&g_TimeStart);
 }
 
 bool IsFrameReady()
 {
     
-    //今の時間を取得
     QueryPerformanceCounter(&g_TimeEnd);
-    //経過時間を計算
     double elapsed = static_cast<double>(g_TimeEnd.QuadPart - g_TimeStart.QuadPart) / static_cast<double>(g_TimeFreq.QuadPart);
-    //時間1/60
     double targetTime = 1.0 / Config::TARGET_FPS;
-    //まだ時間が余っているなら待機
     if (elapsed < targetTime)return false;
     g_FrameTime = static_cast<float>(elapsed);
-    //時間が経過したら計測開始時間を更新してtrueを返す
     g_TimeStart = g_TimeEnd;
     return true;
 }

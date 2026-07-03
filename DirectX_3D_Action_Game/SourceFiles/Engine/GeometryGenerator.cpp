@@ -1,202 +1,92 @@
-/*===================================================================
-// ファイル: GeometryGenerator.cpp
-// 概要: プリミティブ形状生成ヘルパー（実装部）
-=====================================================================*/
 #include "Engine/GeometryGenerator.h"
 #include <cmath>
+#include <unordered_map>
 
 using namespace DirectX;
 
-// 統合生成関数
 MeshData GeometryGenerator::CreateMesh(ShapeType type, DirectX::XMFLOAT4 color) {
     switch (type) {
-    case ShapeType::CUBE:
-        return CreateCube(1.0f, color);
-    case ShapeType::CAPSULE:
-        return CreateCapsule(0.5f, 2.0f, 20, color);
-    case ShapeType::SPHERE:
-        return CreateSphere(0.5f, 16, 16, color);
-    case ShapeType::TETRAHEDRON:
-        return CreateTetrahedron(1.0f, color);
-    case ShapeType::TORUS:
-        return CreateTorus(0.8f, 0.2f, 20, 16, color);
-    case ShapeType::DOUBLE_PYRAMID:
-        return CreateDoublePyramid(1.0f, 2.0f, color);
-    default:
-        return CreateCube(1.0f, color);
+    case ShapeType::CUBE:            return CreateCube(1.0f, color);
+    case ShapeType::CAPSULE:         return CreateCapsule(0.5f, 2.0f, 16, color);
+    case ShapeType::SPHERE:          return CreateSphere(0.5f, 16, 16, color);
+    case ShapeType::TETRAHEDRON:     return CreateTetrahedron(1.0f, color);
+    case ShapeType::TORUS:           return CreateTorus(0.8f, 0.2f, 16, 16, color);
+    case ShapeType::DOUBLE_PYRAMID:  return CreateDoublePyramid(1.0f, 2.0f, color);
+    case ShapeType::CYLINDER:        return CreateCylinder(0.5f, 1.0f, 16, color);
+    case ShapeType::CONE:            return CreateCone(0.5f, 1.0f, 16, color);
+    case ShapeType::PRISM:           return CreatePrism(1.0f, 1.0f, 1.0f, color);
+    case ShapeType::HEXAGONAL_PRISM: return CreateCylinder(0.5f, 1.0f, 6, color);
+    case ShapeType::TRUNCATED_CONE:  return CreateTruncatedCone(0.5f, 0.3f, 1.0f, 16, color);
+    case ShapeType::WEDGE:           return CreateWedge(1.0f, 1.0f, 1.0f, color);
+    default:                         return CreateCube(1.0f, color);
     }
 }
 
-// 立方体作成
+void CalculateNormals(MeshData& mesh) {
+    for (auto& v : mesh.vertices) {
+        v.normal = { 0.0f, 0.0f, 0.0f };
+    }
+    for (size_t i = 0; i < mesh.indices.size(); i += 3) {
+        uint32_t i0 = mesh.indices[i];
+        uint32_t i1 = mesh.indices[i + 1];
+        uint32_t i2 = mesh.indices[i + 2];
+
+        XMVECTOR v0 = XMLoadFloat3(&mesh.vertices[i0].position);
+        XMVECTOR v1 = XMLoadFloat3(&mesh.vertices[i1].position);
+        XMVECTOR v2 = XMLoadFloat3(&mesh.vertices[i2].position);
+
+        XMVECTOR e1 = XMVectorSubtract(v1, v0);
+        XMVECTOR e2 = XMVectorSubtract(v2, v0);
+        XMVECTOR normal = XMVector3Normalize(XMVector3Cross(e1, e2));
+
+        XMFLOAT3 n;
+        XMStoreFloat3(&n, normal);
+
+        mesh.vertices[i0].normal.x += n.x; mesh.vertices[i0].normal.y += n.y; mesh.vertices[i0].normal.z += n.z;
+        mesh.vertices[i1].normal.x += n.x; mesh.vertices[i1].normal.y += n.y; mesh.vertices[i1].normal.z += n.z;
+        mesh.vertices[i2].normal.x += n.x; mesh.vertices[i2].normal.y += n.y; mesh.vertices[i2].normal.z += n.z;
+    }
+
+    for (auto& v : mesh.vertices) {
+        XMVECTOR n = XMLoadFloat3(&v.normal);
+        n = XMVector3Normalize(n);
+        XMStoreFloat3(&v.normal, n);
+    }
+}
+
 MeshData GeometryGenerator::CreateCube(float size, DirectX::XMFLOAT4 color) {
     MeshData mesh;
     float h = size * 0.5f;
 
-    mesh.vertices = {
-        { -h,  h, -h,   color.x, color.y, color.z, color.w }, // 0
-        {  h,  h, -h,   color.x, color.y, color.z, color.w }, // 1
-        {  h,  h,  h,   color.x, color.y, color.z, color.w }, // 2
-        { -h,  h,  h,   color.x, color.y, color.z, color.w }, // 3
-        { -h, -h, -h,   color.x, color.y, color.z, color.w }, // 4
-        {  h, -h, -h,   color.x, color.y, color.z, color.w }, // 5
-        {  h, -h,  h,   color.x, color.y, color.z, color.w }, // 6
-        { -h, -h,  h,   color.x, color.y, color.z, color.w }, // 7
+    XMFLOAT3 positions[] = {
+        { -h, h, -h }, { h, h, -h }, { h, h, h }, { -h, h, h },
+        { -h, -h, -h }, { h, -h, -h }, { h, -h, h }, { -h, -h, h },
+        { -h, -h, h }, { -h, -h, -h }, { -h, h, -h }, { -h, h, h },
+        { h, -h, h }, { h, -h, -h }, { h, h, -h }, { h, h, h },
+        { -h, -h, -h }, { h, -h, -h }, { h, h, -h }, { -h, h, -h },
+        { -h, -h, h }, { h, -h, h }, { h, h, h }, { -h, h, h }
     };
 
-    mesh.indices = {
-        0,1,2, 0,2,3, // 上
-        4,6,5, 4,7,6, // 下
-        4,5,1, 4,1,0, // 奥
-        3,2,6, 3,6,7, // 手前
-        1,5,6, 1,6,2, // 右
-        4,0,3, 4,3,7  // 左
+    XMFLOAT3 normals[] = {
+        { 0, 1, 0 }, { 0, -1, 0 }, { -1, 0, 0 }, { 1, 0, 0 }, { 0, 0, -1 }, { 0, 0, 1 }
     };
-    return mesh;
-}
 
-// 円錐作成
-MeshData GeometryGenerator::CreateCone(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
-    MeshData mesh;
-
-    // 1. 頂点の生成
-    // 先っちょ (頂点0)
-    mesh.vertices.push_back({ 0.0f, height * 0.5f, 0.0f,  color.x, color.y, color.z, color.w });
-
-    // 底面の円周上の点
-    float y = -height * 0.5f;
-    float dTheta = XM_2PI / sliceCount;
-    for (int i = 0; i <= sliceCount; ++i) {
-        float x = radius * cosf(i * dTheta);
-        float z = radius * sinf(i * dTheta);
-        mesh.vertices.push_back({ x, y, z,  color.x, color.y, color.z, color.w });
-    }
-
-    // 底面の中心点
-    mesh.vertices.push_back({ 0.0f, y, 0.0f,  color.x, color.y, color.z, color.w });
-    int centerIndex = (int)mesh.vertices.size() - 1;
-
-    // 2. インデックス
-    // 側面
-    for (int i = 0; i < sliceCount; ++i) {
-        mesh.indices.push_back(0);
-        mesh.indices.push_back(i + 2);
-        mesh.indices.push_back(i + 1);
-    }
-    // 底面
-    for (int i = 0; i < sliceCount; ++i) {
-        mesh.indices.push_back(centerIndex);
-        mesh.indices.push_back(i + 1);
-        mesh.indices.push_back(i + 2);
+    for (int i = 0; i < 6; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            mesh.vertices.push_back({ positions[i * 4 + j].x, positions[i * 4 + j].y, positions[i * 4 + j].z,
+                                      normals[i].x, normals[i].y, normals[i].z,
+                                      color.x, color.y, color.z, color.w });
+        }
+        uint32_t offset = i * 4;
+        mesh.indices.push_back(offset + 0); mesh.indices.push_back(offset + 1); mesh.indices.push_back(offset + 2);
+        mesh.indices.push_back(offset + 0); mesh.indices.push_back(offset + 2); mesh.indices.push_back(offset + 3);
     }
     return mesh;
 }
 
-// カプセル作成
-MeshData GeometryGenerator::CreateCapsule(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
-    MeshData mesh;
-
-    if (height < 2.0f * radius) height = 2.0f * radius;
-    float cylinderHeight = height - 2.0f * radius;
-    float halfCylinderHeight = cylinderHeight * 0.5f;
-
-    int stackCount = sliceCount / 2;
-    if (stackCount < 1) stackCount = 1;
-
-    // 上半球
-    for (int i = 0; i <= stackCount; ++i) {
-        float phi = XM_PIDIV2 * (float)i / stackCount;
-        float y = radius * sinf(phi);
-        float r = radius * cosf(phi);
-        float yOffset = halfCylinderHeight;
-
-        for (int j = 0; j <= sliceCount; ++j) {
-            float theta = XM_2PI * (float)j / sliceCount;
-            float x = r * cosf(theta);
-            float z = r * sinf(theta);
-            mesh.vertices.push_back({ x, y + yOffset, z, color.x, color.y, color.z, color.w });
-        }
-    }
-
-    // 下半球
-    for (int i = 0; i <= stackCount; ++i) {
-        float phi = XM_PIDIV2 * (float)i / stackCount;
-        float y = -radius * sinf(phi);
-        float r = radius * cosf(phi);
-        float yOffset = -halfCylinderHeight;
-
-        for (int j = 0; j <= sliceCount; ++j) {
-            float theta = XM_2PI * (float)j / sliceCount;
-            float x = r * cosf(theta);
-            float z = r * sinf(theta);
-            mesh.vertices.push_back({ x, y + yOffset, z, color.x, color.y, color.z, color.w });
-        }
-    }
-
-    // インデックス生成
-    int ringVertexCount = sliceCount + 1;
-
-    // [A] 上半球
-    for (int i = 0; i < stackCount; ++i) {
-        for (int j = 0; j < sliceCount; ++j) {
-            int row1 = i * ringVertexCount;
-            int row2 = (i + 1) * ringVertexCount;
-
-            mesh.indices.push_back(row1 + j);
-            mesh.indices.push_back(row2 + j + 1);
-            mesh.indices.push_back(row2 + j);
-
-            mesh.indices.push_back(row1 + j);
-            mesh.indices.push_back(row1 + j + 1);
-            mesh.indices.push_back(row2 + j + 1);
-        }
-    }
-
-    // [B] 下半球
-    int bottomStart = (stackCount + 1) * ringVertexCount;
-    for (int i = 0; i < stackCount; ++i) {
-        for (int j = 0; j < sliceCount; ++j) {
-            int row1 = bottomStart + i * ringVertexCount;
-            int row2 = bottomStart + (i + 1) * ringVertexCount;
-
-            mesh.indices.push_back(row1 + j);
-            mesh.indices.push_back(row2 + j);
-            mesh.indices.push_back(row2 + j + 1);
-
-            mesh.indices.push_back(row1 + j);
-            mesh.indices.push_back(row2 + j + 1);
-            mesh.indices.push_back(row1 + j + 1);
-        }
-    }
-
-    // [C] 胴体
-    int topHemisphereBottomRing = 0;
-    int bottomHemisphereTopRing = bottomStart;
-
-    for (int j = 0; j < sliceCount; ++j) {
-        int top1 = topHemisphereBottomRing + j;
-        int top2 = topHemisphereBottomRing + j + 1;
-        int bot1 = bottomHemisphereTopRing + j;
-        int bot2 = bottomHemisphereTopRing + j + 1;
-
-        mesh.indices.push_back(top1);
-        mesh.indices.push_back(bot1);
-        mesh.indices.push_back(bot2);
-
-        mesh.indices.push_back(top1);
-        mesh.indices.push_back(bot2);
-        mesh.indices.push_back(top2);
-    }
-
-    return mesh;
-}
-
-// ★新規追加: 球体作成
 MeshData GeometryGenerator::CreateSphere(float radius, int sliceCount, int stackCount, DirectX::XMFLOAT4 color) {
     MeshData mesh;
-
-    // 1. 頂点生成
-    // 北極
-    mesh.vertices.push_back({ 0.0f, radius, 0.0f, color.x, color.y, color.z, color.w });
+    mesh.vertices.push_back({ 0.0f, radius, 0.0f, 0.0f, 1.0f, 0.0f, color.x, color.y, color.z, color.w }); // 北極
 
     float phiStep = XM_PI / stackCount;
     float thetaStep = 2.0f * XM_PI / sliceCount;
@@ -205,27 +95,22 @@ MeshData GeometryGenerator::CreateSphere(float radius, int sliceCount, int stack
         float phi = i * phiStep;
         for (int j = 0; j <= sliceCount; ++j) {
             float theta = j * thetaStep;
-
             float x = radius * sinf(phi) * cosf(theta);
             float y = radius * cosf(phi);
             float z = radius * sinf(phi) * sinf(theta);
 
-            mesh.vertices.push_back({ x, y, z, color.x, color.y, color.z, color.w });
+            XMVECTOR p = XMVectorSet(x, y, z, 0.0f);
+            XMVECTOR n = XMVector3Normalize(p);
+            XMFLOAT3 normal; XMStoreFloat3(&normal, n);
+
+            mesh.vertices.push_back({ x, y, z, normal.x, normal.y, normal.z, color.x, color.y, color.z, color.w });
         }
     }
+    mesh.vertices.push_back({ 0.0f, -radius, 0.0f, 0.0f, -1.0f, 0.0f, color.x, color.y, color.z, color.w }); // 南極
 
-    // 南極
-    mesh.vertices.push_back({ 0.0f, -radius, 0.0f, color.x, color.y, color.z, color.w });
-
-    // 2. インデックス生成
-    // 北極周辺
     for (int i = 1; i <= sliceCount; ++i) {
-        mesh.indices.push_back(0);
-        mesh.indices.push_back(i + 1);
-        mesh.indices.push_back(i);
+        mesh.indices.push_back(0); mesh.indices.push_back(i + 1); mesh.indices.push_back(i);
     }
-
-    // 側面
     int baseIndex = 1;
     int ringVertexCount = sliceCount + 1;
     for (int i = 0; i < stackCount - 2; ++i) {
@@ -233,128 +118,148 @@ MeshData GeometryGenerator::CreateSphere(float radius, int sliceCount, int stack
             mesh.indices.push_back(baseIndex + i * ringVertexCount + j);
             mesh.indices.push_back(baseIndex + i * ringVertexCount + j + 1);
             mesh.indices.push_back(baseIndex + (i + 1) * ringVertexCount + j);
-
             mesh.indices.push_back(baseIndex + (i + 1) * ringVertexCount + j);
             mesh.indices.push_back(baseIndex + i * ringVertexCount + j + 1);
             mesh.indices.push_back(baseIndex + (i + 1) * ringVertexCount + j + 1);
         }
     }
-
-    // 南極周辺
     int southPoleIndex = (int)mesh.vertices.size() - 1;
     baseIndex = southPoleIndex - ringVertexCount;
     for (int i = 0; i < sliceCount; ++i) {
-        mesh.indices.push_back(southPoleIndex);
-        mesh.indices.push_back(baseIndex + i);
-        mesh.indices.push_back(baseIndex + i + 1);
+        mesh.indices.push_back(southPoleIndex); mesh.indices.push_back(baseIndex + i); mesh.indices.push_back(baseIndex + i + 1);
     }
-
     return mesh;
 }
-// 正四面体作成
-MeshData GeometryGenerator::CreateTetrahedron(float size, DirectX::XMFLOAT4 color) {
+
+MeshData GeometryGenerator::CreateTruncatedCone(float bottomRadius, float topRadius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
     MeshData mesh;
-    float s = size; // スケール
-    float h = s * 0.816f; // 高さ概算
+    float halfHeight = height * 0.5f;
 
-    // 頂点定義 (正四面体の頂点)
-    // 0: 上, 1: 手前, 2: 右奥, 3: 左奥
-    std::vector<XMFLOAT3> pos = {
-        { 0.0f,   h,    0.0f },       // Top
-        { 0.0f,  0.0f, -s * 0.577f }, // Front
-        { s * 0.5f, 0.0f,  s * 0.289f }, // Back Right
-        {-s * 0.5f, 0.0f,  s * 0.289f }  // Back Left
-    };
+    mesh.vertices.push_back({ 0.0f, halfHeight, 0.0f, 0.0f, 1.0f, 0.0f, color.x, color.y, color.z, color.w }); 
+    mesh.vertices.push_back({ 0.0f, -halfHeight, 0.0f, 0.0f, -1.0f, 0.0f, color.x, color.y, color.z, color.w });
 
-    // 頂点データ (法線は簡易的に中心から外へ)
-    for (const auto& p : pos) {
-        XMVECTOR v = XMLoadFloat3(&p);
-        XMFLOAT3 n;
-        XMStoreFloat3(&n, XMVector3Normalize(v));
-        mesh.vertices.push_back({
-            p.x, p.y, p.z,          // 位置 (x, y, z)
-            color.x, color.y, color.z, color.w // 色 (r, g, b, a)
-            });
+    int topCenter = 0, bottomCenter = 1;
+    int ringStart = 2;
+
+    for (int i = 0; i <= sliceCount; ++i) {
+        float theta = XM_2PI * i / sliceCount;
+        float c = cosf(theta), s = sinf(theta);
+        mesh.vertices.push_back({ topRadius * c, halfHeight, topRadius * s, 0, 0, 0, color.x, color.y, color.z, color.w });
+        mesh.vertices.push_back({ bottomRadius * c, -halfHeight, bottomRadius * s, 0, 0, 0, color.x, color.y, color.z, color.w });
     }
 
-    // インデックス (4つの面)
-    mesh.indices = {
-        0, 2, 1, // 右面
-        0, 1, 3, // 左面
-        0, 3, 2, // 裏面
-        1, 2, 3  // 底面
-    };
-
+    for (int i = 0; i < sliceCount; ++i) {
+        uint32_t t1 = ringStart + i * 2, b1 = t1 + 1;
+        uint32_t t2 = ringStart + (i + 1) * 2, b2 = t2 + 1;
+        mesh.indices.insert(mesh.indices.end(), { t1, b1, t2, t2, b1, b2 });
+        mesh.indices.insert(mesh.indices.end(), { (uint32_t)topCenter, t2, t1 });
+        mesh.indices.insert(mesh.indices.end(), { (uint32_t)bottomCenter, b1, b2 });
+    }
+    CalculateNormals(mesh);
     return mesh;
 }
-// トーラス作成
-MeshData GeometryGenerator::CreateTorus(float radius, float tubeRadius, int radialSegments, int tubularSegments, DirectX::XMFLOAT4 color) {
-    MeshData mesh;
 
-    for (int i = 0; i <= radialSegments; i++) {
-        float theta = XM_2PI * (float)i / radialSegments;
-        float cosTheta = cosf(theta);
-        float sinTheta = sinf(theta);
-
-        for (int j = 0; j <= tubularSegments; j++) {
-            float phi = XM_2PI * (float)j / tubularSegments;
-            float cosPhi = cosf(phi);
-            float sinPhi = sinf(phi);
-
-            // XZ平面に広がるリングとし、Y軸方向を厚みとする
-            float centerX = radius * cosTheta;
-            float centerZ = radius * sinTheta;
-
-            // チューブの断面計算
-            float x = (radius + tubeRadius * cosPhi) * cosTheta;
-            float z = (radius + tubeRadius * cosPhi) * sinTheta;
-            float y = tubeRadius * sinPhi;
-
-            mesh.vertices.push_back({ x, y, z, color.x, color.y, color.z, color.w });
-        }
-    }
-
-    for (int i = 0; i < radialSegments; i++) {
-        for (int j = 0; j < tubularSegments; j++) {
-            int current = i * (tubularSegments + 1) + j;
-            int next = (i + 1) * (tubularSegments + 1) + j;
-
-            mesh.indices.push_back(current);
-            mesh.indices.push_back(next);
-            mesh.indices.push_back(current + 1);
-
-            mesh.indices.push_back(current + 1);
-            mesh.indices.push_back(next);
-            mesh.indices.push_back(next + 1);
-        }
-    }
-
-    return mesh;
+MeshData GeometryGenerator::CreateCylinder(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
+    return CreateTruncatedCone(radius, radius, height, sliceCount, color);
 }
-// 二重ピラミッド作成
+
+MeshData GeometryGenerator::CreateCone(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
+    return CreateTruncatedCone(radius, 0.0f, height, sliceCount, color);
+}
+
 MeshData GeometryGenerator::CreateDoublePyramid(float size, float height, DirectX::XMFLOAT4 color) {
     MeshData mesh;
     float h = height * 0.5f;
     float s = size * 0.5f;
 
-    // 頂点
-    // 0: Top, 1: Bottom, 2-5: Center Ring
     mesh.vertices = {
-        { 0.0f,  h, 0.0f, color.x, color.y, color.z, color.w }, // 0: Top
-        { 0.0f, -h, 0.0f, color.x, color.y, color.z, color.w }, // 1: Bottom
-        {   s, 0.0f,   s, color.x, color.y, color.z, color.w }, // 2: RF
-        {   s, 0.0f,  -s, color.x, color.y, color.z, color.w }, // 3: RB
-        {  -s, 0.0f,  -s, color.x, color.y, color.z, color.w }, // 4: LB
-        {  -s, 0.0f,   s, color.x, color.y, color.z, color.w }  // 5: LF
+        { 0.0f,  h, 0.0f, 0,0,0, color.x, color.y, color.z, color.w },
+        { 0.0f, -h, 0.0f, 0,0,0, color.x, color.y, color.z, color.w },
+        {  s, 0.0f,  s, 0,0,0, color.x, color.y, color.z, color.w },
+        {  s, 0.0f, -s, 0,0,0, color.x, color.y, color.z, color.w },
+        { -s, 0.0f, -s, 0,0,0, color.x, color.y, color.z, color.w },
+        { -s, 0.0f,  s, 0,0,0, color.x, color.y, color.z, color.w }
     };
 
-    // インデックス (上のピラミッド + 下のピラミッド)
     mesh.indices = {
-        // Top
-        0, 2, 3,  0, 3, 4,  0, 4, 5,  0, 5, 2,
-        // Bottom
-        1, 3, 2,  1, 4, 3,  1, 5, 4,  1, 2, 5
+        0, 3, 2,  0, 4, 3,  0, 5, 4,  0, 2, 5,
+        1, 2, 3,  1, 3, 4,  1, 4, 5,  1, 5, 2
     };
-
+    CalculateNormals(mesh);
     return mesh;
+}
+
+MeshData GeometryGenerator::CreateTorus(float radius, float tubeRadius, int radialSegments, int tubularSegments, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+    for (int i = 0; i <= radialSegments; i++) {
+        float theta = XM_2PI * (float)i / radialSegments;
+        float cosTheta = cosf(theta), sinTheta = sinf(theta);
+        for (int j = 0; j <= tubularSegments; j++) {
+            float phi = XM_2PI * (float)j / tubularSegments;
+            float cosPhi = cosf(phi), sinPhi = sinf(phi);
+            float x = (radius + tubeRadius * cosPhi) * cosTheta;
+            float z = (radius + tubeRadius * cosPhi) * sinTheta;
+            float y = tubeRadius * sinPhi;
+
+            float nx = cosPhi * cosTheta;
+            float nz = cosPhi * sinTheta;
+            float ny = sinPhi;
+            mesh.vertices.push_back({ x, y, z, nx, ny, nz, color.x, color.y, color.z, color.w });
+        }
+    }
+    for (int i = 0; i < radialSegments; i++) {
+        for (int j = 0; j < tubularSegments; j++) {
+            int current = i * (tubularSegments + 1) + j;
+            int next = (i + 1) * (tubularSegments + 1) + j;
+            mesh.indices.push_back(current); mesh.indices.push_back(next); mesh.indices.push_back(current + 1);
+            mesh.indices.push_back(current + 1); mesh.indices.push_back(next); mesh.indices.push_back(next + 1);
+        }
+    }
+    return mesh;
+}
+
+MeshData GeometryGenerator::CreatePrism(float width, float height, float depth, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+    float hw = width * 0.5f; float hh = height * 0.5f; float hd = depth * 0.5f;
+    mesh.vertices = {
+        { 0, hh, hd, 0,0,0, color.x, color.y, color.z, color.w }, { -hw, hh, -hd, 0,0,0, color.x, color.y, color.z, color.w }, { hw, hh, -hd, 0,0,0, color.x, color.y, color.z, color.w },
+        { 0, -hh, hd, 0,0,0, color.x, color.y, color.z, color.w }, { -hw, -hh, -hd, 0,0,0, color.x, color.y, color.z, color.w }, { hw, -hh, -hd, 0,0,0, color.x, color.y, color.z, color.w }
+    };
+    mesh.indices = { 0,1,2,  3,5,4,  0,5,2,  0,3,5,  0,4,3,  0,1,4,  1,5,4,  1,2,5 };
+    CalculateNormals(mesh);
+    return mesh;
+}
+
+MeshData GeometryGenerator::CreateTetrahedron(float size, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+    float s = size; float h = s * 0.816f;
+    mesh.vertices = {
+        { 0.0f, h, 0.0f, 0,0,0, color.x, color.y, color.z, color.w },
+        { 0.0f, 0.0f, -s * 0.577f, 0,0,0, color.x, color.y, color.z, color.w },
+        { s * 0.5f, 0.0f, s * 0.289f, 0,0,0, color.x, color.y, color.z, color.w },
+        { -s * 0.5f, 0.0f, s * 0.289f, 0,0,0, color.x, color.y, color.z, color.w }
+    };
+    mesh.indices = { 0, 1, 2,  0, 3, 1,  0, 2, 3,  1, 3, 2 };
+    CalculateNormals(mesh);
+    return mesh;
+}
+
+MeshData GeometryGenerator::CreateWedge(float width, float height, float depth, DirectX::XMFLOAT4 color) {
+    MeshData mesh;
+    float hw = width * 0.5f; float hh = height * 0.5f; float hd = depth * 0.5f;
+    mesh.vertices = {
+        { -hw, -hh, -hd, 0,0,0, color.x, color.y, color.z, color.w },
+        {  hw, -hh, -hd, 0,0,0, color.x, color.y, color.z, color.w },
+        { -hw, -hh,  hd, 0,0,0, color.x, color.y, color.z, color.w },
+        {  hw, -hh,  hd, 0,0,0, color.x, color.y, color.z, color.w },
+        { -hw,  hh,  hd, 0,0,0, color.x, color.y, color.z, color.w },
+        {  hw,  hh,  hd, 0,0,0, color.x, color.y, color.z, color.w }
+    };
+    mesh.indices = { 0, 2, 1,  1, 2, 3,  2, 4, 3,  3, 4, 5,  0, 1, 5,  0, 5, 4,  0, 4, 2,  1, 3, 5 };
+    CalculateNormals(mesh);
+    return mesh;
+}
+
+MeshData GeometryGenerator::CreateCapsule(float radius, float height, int sliceCount, DirectX::XMFLOAT4 color) {
+    return CreateSphere(radius, sliceCount, sliceCount, color);
 }

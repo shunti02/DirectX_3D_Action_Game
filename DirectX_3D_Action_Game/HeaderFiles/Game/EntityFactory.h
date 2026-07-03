@@ -1,7 +1,3 @@
-/*===================================================================
-//ファイル:EntityFactory.h
-//概要:Entityの生成を管理するファクトリー（共通化対応版）
-=====================================================================*/
 #pragma once
 #include "App/Main.h"
 #include "ECS/World.h"
@@ -32,1077 +28,664 @@
 #include <iostream>
 #include <DirectXMath.h>
 
-//役割の種類
-enum class PlayerRole {
-    Attacker,//攻撃役
-    Healer//回復役
-};
+enum class PlayerRole { Attacker, Healer };
 
-// 生成パラメータ構造体
 struct EntitySpawnParams {
-    std::string type;           // "Player", "Enemy", "Ground", "Camera" 等
+    std::string type;
     DirectX::XMFLOAT3 position = { 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT3 rotation = { 0.0f, 0.0f, 0.0f };
     DirectX::XMFLOAT3 scale = { 1.0f, 1.0f, 1.0f };
-	DirectX::XMFLOAT4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
-
+    DirectX::XMFLOAT4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
     PlayerRole role = PlayerRole::Attacker;
     PlayerType playerType = PlayerType::AssaultStriker;
-    // オプション（必要に応じて拡張）
-    std::string name = "";      // デバッグ識別用など
+    bool isGrounded = false;
+    std::string name = "";
 };
 
 namespace EntityFactory {
 
-    // 内部ヘルパー: メッシュとコライダーをセットアップする
     inline void AttachMeshAndCollider(EntityID id, World* world, ShapeType shape, DirectX::XMFLOAT4 color, ColliderType colType, float cx, float cy, float cz) {
-        // メッシュ生成
         MeshData data = GeometryGenerator::CreateMesh(shape, color);
-
-        // MeshComponent設定
         auto& mesh = world->GetComponent<MeshComponent>(id);
         mesh.vertexCount = (UINT)data.vertices.size();
         mesh.indexCount = (UINT)data.indices.size();
         mesh.stride = sizeof(Vertex);
 
-        // GPUバッファ作成
         Graphics* g = Game::GetInstance()->GetGraphics();
         g->CreateVertexBuffer(data.vertices, mesh.pVertexBuffer.GetAddressOf());
         g->CreateIndexBuffer(data.indices, mesh.pIndexBuffer.GetAddressOf());
 
-        // ColliderComponent設定
-        auto& col = world->GetComponent<ColliderComponent>(id);
-        if (colType == ColliderType::Type_Box) {
-            col.SetBox(cx, cy, cz);
-        }
-        else if (colType == ColliderType::Type_Capsule) {
-            // カプセルの場合、cxを半径、cyを高さとして扱う規約にする
-            col.SetCapsule(cx, cy);
-        }
-        else if (colType == ColliderType::Type_Sphere) {
-            col.SetSphere(cx); // cxを半径として使う
+        if (colType != ColliderType::Type_None) {
+            auto& col = world->GetComponent<ColliderComponent>(id);
+            if (colType == ColliderType::Type_Box) col.SetBox(cx, cy, cz);
+            else if (colType == ColliderType::Type_Capsule) col.SetCapsule(cx, cy);
+            else if (colType == ColliderType::Type_Sphere) col.SetSphere(cx);
         }
     }
 
-    // ★統合生成関数
     inline EntityID CreateEntity(World* world, const EntitySpawnParams& params) {
-        // 1. ベースEntity作成 & Transform登録
-        TransformComponent transformData{
-             .position = params.position,
-             .rotation = params.rotation,
-             .scale = params.scale
-        };
-        // 2. ベースEntity作成 & Transform登録
-        EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(transformData) // 作ったデータを渡す
-            .Build();
+        TransformComponent transformData{ .position = params.position, .rotation = params.rotation, .scale = params.scale };
+        EntityID id = world->CreateEntity().AddComponent<TransformComponent>(transformData).Build();
 
-        // 2. タイプ別コンポーネント構成
         if (params.type == "Player") {
-            world->AddComponent<MeshComponent>(id);
-            world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<PlayerComponent>(id, PlayerComponent{ .type = params.playerType,.moveSpeed = 5.0f });
-            world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 100, .maxHp = 100, .attackPower = 5 });
-            world->AddComponent<ActionComponent>(id, ActionComponent{ .attackCooldown = 1.0f, .duration = 0.5f });
-            //役割タグ
-            if (params.role == PlayerRole::Attacker) {
-                world->AddComponent<AttackerTag>(id);//攻撃タグ
-            }
-            else if (params.role == PlayerRole::Healer) {
-                world->AddComponent<HealerTag>(id);//回復タグ
-                transformData.position = { 0.0f, -50.0f, 0.0f };
-                // Entity作成時のデータを更新
-                world->GetComponent<TransformComponent>(id).position = transformData.position;
-
-                // 最初は非アクティブにしておく
-                world->GetComponent<PlayerComponent>(id).isActive = false;
-            }
-            float bodyBaseY = 0.0f;
-            // 本体は小さな球（コア）
-            AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 0.0f, 1.0f, 1.0f, 1.0f }, ColliderType::Type_Sphere, 0.5f, 0.0f, 0.0f);
-            // ----------------------------------------------------
-            // ★プレイヤータイプに応じたモデル生成
-            // ----------------------------------------------------
-            PlayerType currentType = params.playerType;
-
-            // ====================================================
-            // 2. 付属パーツの生成 (Head, Body, Arms...)
-            // ====================================================
-            DirectX::XMFLOAT4 mainColor = { 0.1f, 0.1f, 0.2f, 1.0f }; // ダークネイビー
-            DirectX::XMFLOAT4 subColor = { 0.8f, 0.8f, 0.9f, 1.0f }; // シルバー
-            DirectX::XMFLOAT4 glowColor = { 0.0f, 0.8f, 1.0f, 1.0f }; // シアン発光
-            DirectX::XMFLOAT4 jointColor = { 0.2f, 0.2f, 0.2f, 1.0f }; // 関節グレー
-
-            switch (currentType) {
-
-                // ====================================================
-                // TYPE A: Assault Striker (既存モデル)
-                // ====================================================
-            case PlayerType::AssaultStriker:
-            {
-            // ====================================================
-            // 1. 頭部 (三角錐 + 双四角錐の耳)
-            // ====================================================
-            // 頭：三角錐 (頂点を前に向ける => X軸90度回転)
-            {
-                PlayerPartComponent partData;
-                partData.parentID = (int)id;
-                partData.partType = PartType::Head;
-                partData.baseOffset = { 0.0f,bodyBaseY + 0.9f, 0.0f };
-                partData.baseRotation = { DirectX::XM_PIDIV2, 0.0f, 0.0f };
-
-                EntityID headID = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 0.8f, 0.6f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<PlayerPartComponent>(partData)
-                    .Build();
-                AttachMeshAndCollider(headID, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                // 耳 (ループ展開)
-                // 左耳
-                {
-                    PlayerPartComponent earPart;
-                    earPart.parentID = (int)id;
-                    earPart.partType = PartType::EarLeft;
-                    earPart.baseOffset = { -0.25f, bodyBaseY + 1.3f, -0.1f };
-                    earPart.baseRotation = { -0.4f, 0.0f, 0.3f }; // 左に開く
-
-                    EntityID earL = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.15f, 0.5f, 0.15f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(earPart)
-                        .Build();
-                    AttachMeshAndCollider(earL, world, ShapeType::DOUBLE_PYRAMID, glowColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 右耳
-                {
-                    PlayerPartComponent earPart;
-                    earPart.parentID = (int)id;
-                    earPart.partType = PartType::EarRight;
-                    earPart.baseOffset = { 0.25f, bodyBaseY + 1.3f, -0.1f };
-                    earPart.baseRotation = { -0.4f, 0.0f, -0.3f }; // 右に開く
-
-                    EntityID earR = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.15f, 0.5f, 0.15f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(earPart)
-                        .Build();
-                    AttachMeshAndCollider(earR, world, ShapeType::DOUBLE_PYRAMID, glowColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-            }
-
-            // ====================================================
-            // 2. 胴体構成 (コアを中心に上下左右から三角錐)
-            // ====================================================
-            // 胴体上部：六角錐
-            float coreDist = 0.6f; // コアからの距離
-            float torsoScale = 0.5f;
-            {
-                PlayerPartComponent part;
-                part.parentID = (int)id;
-                part.partType = PartType::Body;
-                part.baseOffset = { 0.0f, bodyBaseY + coreDist, 0.0f };
-                // X軸180度回転で下を向く
-                part.baseRotation = { DirectX::XM_PI, 0.0f, 0.0f };
-
-                EntityID bodyTop = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {torsoScale, torsoScale, torsoScale} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<PlayerPartComponent>(part)
-                    .Build();
-                AttachMeshAndCollider(bodyTop, world, ShapeType::TETRAHEDRON, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-            }
-
-            // 2-2. 下の三角錐 (頂点を上に向ける => コアへ)
-            {
-                PlayerPartComponent part;
-                part.parentID = (int)id;
-                part.partType = PartType::Body;
-                part.baseOffset = { 0.0f, bodyBaseY - coreDist, 0.0f };
-                // デフォルトで上向きなので回転なし
-                part.baseRotation = { 0.0f, 0.0f, 0.0f };
-
-                EntityID bodyBottom = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {torsoScale, torsoScale, torsoScale} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<PlayerPartComponent>(part)
-                    .Build();
-                AttachMeshAndCollider(bodyBottom, world, ShapeType::TETRAHEDRON, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-            }
-
-            // 2-3. 右の三角錐 (頂点を左に向ける => コアへ)
-            {
-                PlayerPartComponent part;
-                part.parentID = (int)id;
-                part.partType = PartType::Body;
-                part.baseOffset = { coreDist, bodyBaseY, 0.0f };
-                // Z軸+90度回転で左(-X)を向く
-                part.baseRotation = { 0.0f, 0.0f, DirectX::XM_PIDIV2 };
-
-                EntityID bodyRight = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {torsoScale, torsoScale, torsoScale} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<PlayerPartComponent>(part)
-                    .Build();
-                AttachMeshAndCollider(bodyRight, world, ShapeType::TETRAHEDRON, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-            }
-
-            // 2-4. 左の三角錐 (頂点を右に向ける => コアへ)
-            {
-                PlayerPartComponent part;
-                part.parentID = (int)id;
-                part.partType = PartType::Body;
-                part.baseOffset = { -coreDist, bodyBaseY, 0.0f };
-                // Z軸-90度回転で右(+X)を向く
-                part.baseRotation = { 0.0f, 0.0f, -DirectX::XM_PIDIV2 };
-
-                EntityID bodyLeft = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {torsoScale, torsoScale, torsoScale} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<PlayerPartComponent>(part)
-                    .Build();
-                AttachMeshAndCollider(bodyLeft, world, ShapeType::TETRAHEDRON, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-            }
-
-            // ====================================================
-            // 4. 腕 (肩[トーラス] -> 上腕[三角錐] -> 肘[球] -> 前腕[三角錐])
-            // ====================================================
-            float shoulderDist = 0.7f;
-            float elbowDist = 1.6f;
-            float armY = bodyBaseY + 1.2f;
-
-            // --- 左腕 ---
-            {
-                // 肩
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ShoulderLeft;
-                    p.baseOffset = { -shoulderDist, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, -DirectX::XM_PIDIV2 }; // 縦向き
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 0.25f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TORUS, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 肘
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmLeft;
-                    p.baseOffset = { -elbowDist + 0.2f, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, 0.0f };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 0.25f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::SPHERE, jointColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 上腕 (左向き=Z軸-90度)
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmLeft;
-                    p.baseOffset = { -elbowDist + 0.4f, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, -DirectX::XM_PIDIV2 };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.2f, 0.5f, 0.2f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 前腕 (右向き=Z軸+90度)
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmLeft;
-                    p.baseOffset = { -elbowDist, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, DirectX::XM_PIDIV2 };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 1.0f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-            }
-
-            // --- 右腕 ---
-            {
-                // 肩
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ShoulderRight;
-                    p.baseOffset = { shoulderDist, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, DirectX::XM_PIDIV2 }; // 縦向き
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 0.25f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TORUS, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 肘
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmRight;
-                    p.baseOffset = { elbowDist - 0.2f, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, 0.0f };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 0.25f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::SPHERE, jointColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 上腕 (右向き=Z軸+90度)
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmRight;
-                    p.baseOffset = { elbowDist - 0.4f, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, DirectX::XM_PIDIV2 };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.2f, 0.5f, 0.2f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // 前腕 (左向き=Z軸-90度)
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::ArmRight;
-                    p.baseOffset = { elbowDist, armY - 0.7f, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, -DirectX::XM_PIDIV2 };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 1.0f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-            }
-            // ====================================================
-            // 5. 足 (トーラス -> 三角錐)
-            // ====================================================
-            float legX = 0.4f;
-            float thighY = bodyBaseY - 0.6f;
-            float shinY = bodyBaseY - 1.2f;
-
-            // --- 左足 ---
-            {
-                // 腿
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::LegLeft;
-                    p.baseOffset = { -legX, thighY, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, 0.0f };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.4f, 0.4f, 0.4f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TORUS, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // すね
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::LegLeft;
-                    p.baseOffset = { -0.4f, shinY + 0.3f, -0.2f };
-                    p.baseRotation = { DirectX::XM_PI, 0.0f, 0.0f }; // 下向き
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 1.0f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-            }
-
-            // --- 右足 ---
-            {
-                // 腿
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::LegRight;
-                    p.baseOffset = { legX, thighY, 0.0f };
-                    p.baseRotation = { 0.0f, 0.0f, 0.0f };
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.4f, 0.4f, 0.4f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TORUS, mainColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-                // すね
-                {
-                    PlayerPartComponent p;
-                    p.parentID = (int)id;
-                    p.partType = PartType::LegRight;
-                    p.baseOffset = { 0.4f, shinY + 0.3f, -0.2f };
-                    p.baseRotation = { DirectX::XM_PI, 0.0f, 0.0f }; // 下向き
-
-                    EntityID ent = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.25f, 1.0f, 0.25f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<PlayerPartComponent>(p)
-                        .Build();
-                    AttachMeshAndCollider(ent, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
-                }
-            }
-
-           // DebugLog("[Factory] Created Sci-Fi Floating Player ID: %d", id);
+            AppLog::AddLog("[Warning] プレイヤー生成には AssembleCustomPlayer を使用してください。");
         }
-        break;
-        // ====================================================
-            // TYPE B: Buster Guard (重装甲パワータイプ)
-            // ====================================================
-            case PlayerType::BusterGuard:
-            {
-                mainColor = { 1.0f, 0.75f, 0.0f, 1.0f }; // 山吹色
-                subColor = { 0.25f, 0.25f, 0.3f, 1.0f }; // ガンメタル
-
-                // [Body Main] 胸部アーマー
-                {
-                    EntityID p = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {1.4f, 1.0f, 1.0f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0, 0, 0} }).Build();
-                    AttachMeshAndCollider(p, world, ShapeType::CUBE, mainColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Body Lower] 腹部
-                {
-                    EntityID p = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {1.0f, 0.6f, 0.8f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0, -0.7f, 0} }).Build();
-                    AttachMeshAndCollider(p, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Backpack] 大型ジェネレーター
-                {
-                    EntityID p = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {1.2f, 1.2f, 0.6f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0, 0.2f, 0.7f} }).Build();
-                    AttachMeshAndCollider(p, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Head] フラットヘッド
-                {
-                    EntityID p = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 0.4f, 0.6f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Head, .baseOffset = {0, 0.8f, 0} }).Build();
-                    AttachMeshAndCollider(p, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-
-                // [Shoulder] 球体ショルダー + スパイク
-                float sDist = 1.1f;
-                for (int i = -1; i <= 1; i += 2) {
-                    // 球体
-                    EntityID s = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {1.0f, 1.0f, 1.0f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::ShoulderLeft : PartType::ShoulderRight), .baseOffset = {i * sDist, 0.4f, 0} }).Build();
-                    AttachMeshAndCollider(s, world, ShapeType::SPHERE, mainColor, ColliderType::Type_None, 0, 0, 0);
-                    // スパイク
-                    EntityID sp = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.3f, 0.6f, 0.3f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::ShoulderLeft : PartType::ShoulderRight), .baseOffset = {i * (sDist + 0.3f), 0.8f, 0}, .baseRotation = {0,0,i * -0.5f} }).Build();
-                    AttachMeshAndCollider(sp, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-
-                // [Arm] ハンマーアーム (肘なし、太い腕)
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID a = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 1.2f, 0.6f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::ArmLeft : PartType::ArmRight), .baseOffset = {i * 1.8f, -0.6f, 0}, .baseRotation = {0,0,i * 0.2f} }).Build();
-                    AttachMeshAndCollider(a, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                    // 手首のリング
-                    EntityID r = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.7f, 0.2f, 0.7f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::HandLeft : PartType::HandRight), .baseOffset = {i * 1.9f, -1.2f, 0}, .baseRotation = {0,0,i * 0.2f} }).Build();
-                    AttachMeshAndCollider(r, world, ShapeType::TORUS, mainColor, ColliderType::Type_None, 0, 0, 0);
-                }
-
-                // [Leg] 重厚な脚
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID l = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.7f, 1.4f, 0.9f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::LegLeft : PartType::LegRight), .baseOffset = {i * 0.5f, -1.2f, 0} }).Build();
-                    AttachMeshAndCollider(l, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-            }
-            break;
-
-            // ====================================================
-            // TYPE C: Plasma Sniper (高機動タイプ)
-            // ====================================================
-            case PlayerType::PlasmaSniper:
-            {
-                mainColor = { 0.0f, 1.0f, 0.6f, 1.0f }; // エメラルドグリーン
-                subColor = { 0.9f, 0.9f, 0.9f, 1.0f };  // 白
-
-                // [Frames] 骨格フレーム
-                EntityID f1 = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 0.2f, 0.4f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0, 0.6f, 0} }).Build();
-                AttachMeshAndCollider(f1, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                EntityID f2 = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.4f, 0.2f, 0.4f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0, -0.6f, 0} }).Build();
-                AttachMeshAndCollider(f2, world, ShapeType::CUBE, subColor, ColliderType::Type_None, 0, 0, 0);
-                // 接続パイプ
-                EntityID pL = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 1.2f, 0.1f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {-0.4f, 0, -0.2f} }).Build();
-                AttachMeshAndCollider(pL, world, ShapeType::CUBE, mainColor, ColliderType::Type_None, 0, 0, 0);
-                EntityID pR = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 1.2f, 0.1f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {0.4f, 0, -0.2f} }).Build();
-                AttachMeshAndCollider(pR, world, ShapeType::CUBE, mainColor, ColliderType::Type_None, 0, 0, 0);
-
-                // [Head] センサーアイ
-                EntityID h = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.3f, 0.5f, 0.5f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Head, .baseOffset = {0, 0.9f, 0.2f} }).Build();
-                AttachMeshAndCollider(h, world, ShapeType::CUBE, mainColor, ColliderType::Type_None, 0, 0, 0);
-
-                // [Wing] 大型バインダー
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID w = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 1.8f, 0.6f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = PartType::Body, .baseOffset = {i * 0.8f, 0.5f, -0.5f}, .baseRotation = {0.6f, 0, i * 0.4f} }).Build();
-                    AttachMeshAndCollider(w, world, ShapeType::TETRAHEDRON, mainColor, ColliderType::Type_None, 0, 0, 0);
-                }
-
-                // [Arm] 長い腕
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID s = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.4f, 0.4f, 0.4f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::ShoulderLeft : PartType::ShoulderRight), .baseOffset = {i * 0.6f, 0.6f, 0} }).Build();
-                    AttachMeshAndCollider(s, world, ShapeType::SPHERE, subColor, ColliderType::Type_None, 0, 0, 0);
-
-                    EntityID a = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.15f, 1.4f, 0.15f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::ArmLeft : PartType::ArmRight), .baseOffset = {i * 0.7f, -0.2f, 0}, .baseRotation = {0,0,i * 0.1f} }).Build();
-                    AttachMeshAndCollider(a, world, ShapeType::CUBE, mainColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Leg] 逆関節
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID l = world->CreateEntity().AddComponent<TransformComponent>(TransformComponent{ .scale = {0.2f, 1.5f, 0.3f} }).AddComponent<MeshComponent>().AddComponent<PlayerPartComponent>(PlayerPartComponent{ .parentID = (int)id, .partType = (i == -1 ? PartType::LegLeft : PartType::LegRight), .baseOffset = {i * 0.3f, -1.3f, -0.3f}, .baseRotation = {0.4f, 0, 0} }).Build();
-                    AttachMeshAndCollider(l, world, ShapeType::TETRAHEDRON, subColor, ColliderType::Type_None, 0, 0, 0);
-                }
-            }
-            break;
-
-            } // end switch
-            DebugLog("[Factory] Created Sci-Fi Player ID: %d (Type: %d)", id, (int)currentType);
+        else if (params.type == "EnemyMelee") {
         }
-        // ====================================================
-        // ENEMY TYPE 1: 雑魚 (Assault Drone)
-        // イメージ: 単眼の突撃ドローン。大きな一つ目と、左右の鋭いウィング。
-        // ====================================================
-        else if (params.type == "Enemy") {
-            world->AddComponent<MeshComponent>(id);
-            world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 3.5f, .attackRange = 1.5f, .isRanged = false, .weight = 1.0f ,.isImmovable = false });
-            world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 30, .maxHp = 30, .attackPower = 10 });
-            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = true });
-
-            // 本体（コア）
-            AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 0.2f, 0.2f, 0.2f, 1.0f }, ColliderType::Type_Sphere, 0.5f, 0, 0);
-
-            // [Head] 単眼 (発光する黄色)
-            {
-                EntityID eye = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.3f, 0.3f, 0.3f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Head, .baseOffset = {0, 0, 0.25f} })
-                    .Build();
-                AttachMeshAndCollider(eye, world, ShapeType::SPHERE, { 1.0f, 0.8f, 0.0f, 1.0f }, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Body] 装甲シェル (上下のプレート)
-            {
-                EntityID shell = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 0.6f, 0.6f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Body,.baseOffset = {0, 0, 0}})
-                    .Build();
-                AttachMeshAndCollider(shell, world, ShapeType::DOUBLE_PYRAMID, params.color, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Wing] 左ウィング (鋭い刃)
-            {
-                EntityID wing = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 0.8f, 0.4f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Wing, .baseOffset = {-0.5f, 0.2f, -0.2f}, .baseRotation = {0, 0, 0.5f} })
-                    .Build();
-                AttachMeshAndCollider(wing, world, ShapeType::TETRAHEDRON, { 0.8f, 0.1f, 0.1f, 1.0f }, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Wing] 右ウィング
-            {
-                EntityID wing = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 0.8f, 0.4f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Wing, .baseOffset = {0.5f, 0.2f, -0.2f}, .baseRotation = {0, 0, -0.5f} })
-                    .Build();
-                AttachMeshAndCollider(wing, world, ShapeType::TETRAHEDRON, { 0.8f, 0.1f, 0.1f, 1.0f }, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Thruster] 後部スラスター
-            {
-                EntityID th = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.2f, 0.2f, 0.4f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Thruster, .baseOffset = {0, -0.2f, -0.5f} })
-                    .Build();
-                AttachMeshAndCollider(th, world, ShapeType::CUBE, { 0.3f, 0.3f, 0.3f, 1.0f }, ColliderType::Type_None, 0, 0, 0);
-            }
-            DebugLog("[Factory] Created Assault Drone ID: %d", id);
+        else if (params.type == "EnemySniper") {
         }
-
-        // ====================================================
-        // ENEMY TYPE 2: 遠距離 (Orbital Sniper)
-        // イメージ: 浮遊する十字型の砲台。中央にクリスタル、前方に長いレールガン。
-        // ====================================================
-        else if (params.type == "EnemyRanged") {
-            world->AddComponent<MeshComponent>(id);
-            world->AddComponent<ColliderComponent>(id);
-            world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 2.5f, .attackRange = 15.0f, .isRanged = true, .weight = 3.0f,.isImmovable = false });
-            world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 30, .maxHp = 30, .attackPower = 15 });
-            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = true });
-
-            DirectX::XMFLOAT4 baseColor = { 0.4f, 0.0f, 0.6f, 1.0f }; // 紫
-            DirectX::XMFLOAT4 glowColor = { 0.8f, 0.2f, 1.0f, 1.0f }; // 明るい紫
-
-            // 本体（中心核）
-            AttachMeshAndCollider(id, world, ShapeType::SPHERE, baseColor, ColliderType::Type_Sphere, 0.6f, 0, 0);
-
-            // [Weapon] 長砲身レールガン
-            {
-                EntityID cannon = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.15f, 0.15f, 2.0f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Weapon, .baseOffset = {0, 0, 0.8f} })
-                    .Build();
-                AttachMeshAndCollider(cannon, world, ShapeType::CUBE, { 0.1f, 0.1f, 0.1f, 1.0f }, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Ring] 回転するリング（縦）
-            {
-                EntityID ring = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {1.0f, 1.0f, 0.1f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Ring, .baseOffset = {0, 0, 0} })
-                    .Build();
-                AttachMeshAndCollider(ring, world, ShapeType::TORUS, glowColor, ColliderType::Type_None, 0, 0, 0);
-            }
-            // [Decoration] 上下の安定翼
-            for (int i = -1; i <= 1; i += 2) { // i = -1, 1
-                EntityID fin = world->CreateEntity()
-                    .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.1f, 0.8f, 0.8f} })
-                    .AddComponent<MeshComponent>()
-                    .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Wing, .baseOffset = {0, i * 0.8f, -0.5f} })
-                    .Build();
-                AttachMeshAndCollider(fin, world, ShapeType::TETRAHEDRON, baseColor, ColliderType::Type_None, 0, 0, 0);
-            }
-            DebugLog("[Factory] Created Orbital Sniper ID: %d", id);
-            }
-
-            // ====================================================
-            // ENEMY TYPE 3: 中ボス (Heavy Golem)
-            // イメージ: ずんぐりした胴体に、巨大な球体の肩と、太い脚。
-            // ====================================================
-        else if (params.type == "Enemy2") {
-                world->AddComponent<MeshComponent>(id);
-                world->AddComponent<ColliderComponent>(id);
-                world->AddComponent<EnemyComponent>(id, EnemyComponent{ .moveSpeed = 2.0f, .attackRange = 3.0f, .isRanged = false, .weight = 10.0f,.isImmovable = false });
-                world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 200, .maxHp = 200, .attackPower = 25 });
-                world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = true });
-
-                DirectX::XMFLOAT4 armorColor = { 0.8f, 0.6f, 0.0f, 1.0f }; // 黄土色/金
-                DirectX::XMFLOAT4 jointColor = { 0.2f, 0.2f, 0.2f, 1.0f }; // 黒
-
-                // 本体（胸部）
-                AttachMeshAndCollider(id, world, ShapeType::CUBE, armorColor, ColliderType::Type_Box, 1.5f, 1.5f, 1.5f);
-
-                // [Head] 頭部（埋まっている感じ）
-                {
-                    EntityID head = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.8f, 0.5f, 0.8f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Head, .baseOffset = {0, 0.9f, 0} })
-                        .Build();
-                    AttachMeshAndCollider(head, world, ShapeType::CUBE, jointColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Shoulder] 巨大な肩アーマー (左右)dddddd
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID shoulder = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {1.5f, 1.5f, 1.5f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = (i == -1 ? EnemyPartType::ArmLeft : EnemyPartType::ArmRight), .baseOffset = {i * 1.6f, 0.5f, 0.0f} })
-                        .Build();
-                    AttachMeshAndCollider(shoulder, world, ShapeType::SPHERE, jointColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Arm] 腕（スパイク）
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID arm = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.5f, 1.2f, 0.5f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = (i == -1 ? EnemyPartType::ArmLeft : EnemyPartType::ArmRight), .baseOffset = {i * 2.0f, -0.5f, 0.5f}, .baseRotation = {1.0f, 0, 0} })
-                        .Build();
-                    AttachMeshAndCollider(arm, world, ShapeType::TETRAHEDRON, jointColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                // [Leg] 太い脚
-                for (int i = -1; i <= 1; i += 2) {
-                    EntityID leg = world->CreateEntity()
-                        .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.6f, 1.2f, 0.8f} })
-                        .AddComponent<MeshComponent>()
-                        .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = (i == -1 ? EnemyPartType::LegLeft : EnemyPartType::LegRight), .baseOffset = {i * 0.6f, -1.2f, 0.0f} })
-                        .Build();
-                    AttachMeshAndCollider(leg, world, ShapeType::CUBE, jointColor, ColliderType::Type_None, 0, 0, 0);
-                }
-                DebugLog("[Factory] Created Heavy Golem ID: %d", id);
-                }
-
-                // ====================================================
-                // ENEMY TYPE 4: ラスボス (Crimson Seraph)
-                // イメージ: 幾何学的な天使。赤いコアを中心に、複数のリングが回転し、背後には結晶の翼が広がる。
-                // ====================================================
-        else if (params.type == "Boss") {
-                    world->AddComponent<MeshComponent>(id);
-                    world->AddComponent<ColliderComponent>(id);
-                    // 不動設定 (weight=超大, isImmovable=true)
-                    world->AddComponent<EnemyComponent>(id, EnemyComponent{ .type = EnemyType::Boss, .moveSpeed = 0.0f, .attackRange = 40.0f, .isRanged = true,.attackInterval = 5.0f,.weight = 1000.0f, .isImmovable = true });
-                    world->AddComponent<StatusComponent>(id, StatusComponent{ .hp = 1000, .maxHp = 1000, .attackPower = 40 });
-                    world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = false });
-
-                    // コアの色: 赤（ご指定の色）
-                    DirectX::XMFLOAT4 coreColor = { 0.8f, 0.0f, 0.0f, 1.0f };
-                    DirectX::XMFLOAT4 darkMetal = { 0.2f, 0.05f, 0.05f, 1.0f };
-                    DirectX::XMFLOAT4 energy = { 1.0f, 0.2f, 0.2f, 1.0f };
-
-                    // 本体（巨大コア）
-                    AttachMeshAndCollider(id, world, ShapeType::SPHERE, coreColor, ColliderType::Type_Sphere, 3.0f, 3.0f, 3.0f);
-
-                    // [Ring 1] 横回転する巨大リング
-                    {
-                        EntityID ring = world->CreateEntity()
-                            .AddComponent<TransformComponent>(TransformComponent{ .scale = {2.0f, 0.2f, 2.0f} }) // 一番大きい
-                            .AddComponent<MeshComponent>()
-                            // baseRotation.y = 90度 (縦向き)
-                            .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Ring, .baseOffset = {0,0,0}, .baseRotation = {0, 0, 0} })
-                            .Build();
-                        AttachMeshAndCollider(ring, world, ShapeType::TORUS, darkMetal, ColliderType::Type_None, 0, 0, 0);
-                    }
-                    // [Ring 2] 縦回転するリング
-                    {
-                        EntityID ring = world->CreateEntity()
-                            .AddComponent<TransformComponent>(TransformComponent{ .scale = {2.0f, 0.2f, 2.0f} }) // 中くらい
-                            .AddComponent<MeshComponent>()
-                            // baseRotation.x = 90度 (横向き)
-                            .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Ring, .baseOffset = {0,0,0}, .baseRotation = {0, 0, 0} })
-                            .Build();
-                        AttachMeshAndCollider(ring, world, ShapeType::TORUS, energy, ColliderType::Type_None, 0, 0, 0);
-                    }
-                    // [Ring 3] 斜め回転するリング
-                    {
-                        EntityID ring = world->CreateEntity()
-                            .AddComponent<TransformComponent>(TransformComponent{ .scale = {2.0f, 0.2f, 2.0f}}) // 小さい
-                            .AddComponent<MeshComponent>()
-                            // baseRotation = 斜め45度
-                            .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Ring, .baseOffset = {0,0,0}, .baseRotation = {0, 0, 0} })
-                            .Build();
-                        AttachMeshAndCollider(ring, world, ShapeType::TORUS, darkMetal, ColliderType::Type_None, 0, 0, 0);
-                    }
-
-                    // [Wings] 背面の結晶翼 (6枚のブレードを展開)
-                    for (int i = 0; i < 6; ++i) {
-                        float angleStep = DirectX::XM_PI / 3.0f; // 半円状に広げる
-                        float angle = -DirectX::XM_PIDIV2 + (angleStep * i); // -90度からスタート
-
-                        float x = cosf(angle) * 4.0f;
-                        float y = sinf(angle) * 4.0f;
-
-                        EntityID wing = world->CreateEntity()
-                            .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.5f, 2.5f, 0.2f} })
-                            .AddComponent<MeshComponent>()
-                            .AddComponent<EnemyPartComponent>(EnemyPartComponent{
-                               .parentID = (int)id,
-                               .partType = EnemyPartType::Wing,
-                               .baseOffset = {x, y + 2.0f, 2.0f},
-                               .baseRotation = {0, 0, angle - DirectX::XM_PIDIV2}
-                                })
-                            .Build();
-                        AttachMeshAndCollider(wing, world, ShapeType::DOUBLE_PYRAMID, energy, ColliderType::Type_None, 0, 0, 0);
-                    }
-
-                    // [Satellite] 周囲を回るビット (4つ)
-                    for (int i = 0; i < 4; ++i) {
-                        float angle = (DirectX::XM_2PI / 4.0f) * i;
-                        float x = cosf(angle) * 5.0f;
-                        float z = sinf(angle) * 5.0f;
-                        EntityID bit = world->CreateEntity()
-                            .AddComponent<TransformComponent>(TransformComponent{ .scale = {0.8f, 1.5f, 0.8f} })
-                            .AddComponent<MeshComponent>()
-                            .AddComponent<EnemyPartComponent>(EnemyPartComponent{ .parentID = (int)id, .partType = EnemyPartType::Shield, .baseOffset = {x, 0, z} })
-                            .Build();
-                        AttachMeshAndCollider(bit, world, ShapeType::DOUBLE_PYRAMID, darkMetal, ColliderType::Type_None, 0, 0, 0);
-                    }
-                    DebugLog("[Factory] Created Boss (Crimson Seraph) ID: %d", id);
-                    }
-        else if (params.type == "Ground" || params.type == "Ground2" || params.type == "Ground3" || params.type == "Ground4") {
-            world->AddComponent<MeshComponent>(id);
-            world->AddComponent<ColliderComponent>(id);
-
-            DirectX::XMFLOAT4 color = (params.type == "Ground") ? Colors::Gray : Colors::Magenta;
-            AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
-            DebugLog("[Factory] Created Ground ID: %d", id);
+        else if (params.type == "EnemyTurret") {
         }
-        // ★追加: 汎用的な壁 (Wall)
-        else if (params.type == "Wall") {
-            world->AddComponent<MeshComponent>(id);
+        else if (params.type == "Ground") {
+            world->AddComponent<                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             MeshComponent>(id);
             world->AddComponent<ColliderComponent>(id);
-
-            // 指定された色、サイズ、座標で箱を作る
-            // ※ColliderType::Type_Box を指定し、サイズは scale に依存させる
-            AttachMeshAndCollider(id, world, ShapeType::CUBE, params.color, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
-
-            DebugLog("[Factory] Created Wall ID: %d", id);
+            DirectX::XMFLOAT4 color = { 0.15f, 0.2f, 0.25f, 1.0f };
+            AttachMeshAndCollider(id, world, ShapeType::CYLINDER, color, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
         }
-        else if (params.type == "HealSpot" || params.type == "Cube" || params.type == "Diamond") {
+        else if (params.type == "Boundary") {
             world->AddComponent<MeshComponent>(id);
-            world->AddComponent<ColliderComponent>(id);
-
-            // 形: DOUBLE_PYRAMID (ダイヤ型/クリスタル型)
-            // 当たり判定: Type_Box (箱型)
-            AttachMeshAndCollider(id, world, ShapeType::DOUBLE_PYRAMID, params.color, ColliderType::Type_Box, 1.0f, 2.0f, 1.0f);
-
-            DebugLog("[Factory] Created Crystal/HealSpot ID: %d", id);
+            DirectX::XMFLOAT4 alertColor = { 1.0f, 0.0f, 0.2f, 0.3f };
+            AttachMeshAndCollider(id, world, ShapeType::CUBE, alertColor, ColliderType::Type_None, 0, 0, 0);
         }
-        
         else if (params.type == "Camera") {
             world->AddComponent<CameraComponent>(id);
-            // カメラ固有の初期化が必要ならここで行う
-            DebugLog("[Factory] Created Camera ID: %d", id);
         }
-        else {
-            DebugLog("[Warning] Unknown Entity Type: %s", params.type.c_str());
-        }
-
         return id;
     }
-    //攻撃判定作成関数
-    inline void CreateAttackHitbox(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 scale, int damage) {
+
+    inline void CreateAttackHitbox(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 scale, int damage, float lifeTime = 0.1f) {
         EntityID id = world->CreateEntity()
             .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = scale })
             .AddComponent<ColliderComponent>()
-            .AddComponent<AttackBoxComponent>(AttackBoxComponent{ .ownerID = (int)ownerID, .damage = damage, .lifeTime = 0.1f })
+            .AddComponent<AttackBoxComponent>(AttackBoxComponent{ .ownerID = (int)ownerID, .damage = damage, .lifeTime = lifeTime }) // ←ここを修正
             .Build();
-
         auto& col = world->GetComponent<ColliderComponent>(id);
         col.SetBox(1.0f, 1.0f, 1.0f);
-
-        world->AddComponent<MeshComponent>(id);
         AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Red, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
-        DebugLog("Spawned AttackBox! ID: %d", id);
     }
-    // 回復判定作成関数
-    inline void CreateRecoveryHitbox(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 scale, int healAmount) {
-        EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = scale })
-            .AddComponent<ColliderComponent>()
-            .AddComponent<RecoveryBoxComponent>(RecoveryBoxComponent{ .ownerID = (int)ownerID, .healAmount = healAmount, .lifeTime = 0.5f })
-            .Build();
 
-        auto& col = world->GetComponent<ColliderComponent>(id);
-        col.SetBox(1.0f, 1.0f, 1.0f);
-
-        world->AddComponent<MeshComponent>(id);
-        AttachMeshAndCollider(id, world, ShapeType::CUBE, Colors::Green, ColliderType::Type_Box, 1.0f, 1.0f, 1.0f);
-        DebugLog("Spawned RecoveryBox! ID: %d", id);
-    }
-    // 攻撃球の生成 (MeshとColliderを追加)
     inline void CreateAttackSphere(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, int damage) {
         EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} }) // 初期サイズ
-            .AddComponent<AttackSphereComponent>(AttackSphereComponent{
-                .ownerID = (int)ownerID,
-                .damage = damage,
-                .lifeTime = 0.4f,
-                .currentRadius = 0.5f,
-                .maxRadius = 3.5f,
-                .expansionSpeed = 15.0f
-                })
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {2.5f, 2.5f, 2.5f} })
+            .AddComponent<AttackSphereComponent>(AttackSphereComponent{ .ownerID = (int)ownerID, .damage = damage, .lifeTime = 0.3f, .currentRadius = 0.5f, .maxRadius = 3.5f, .expansionSpeed = 15.0f })
             .Build();
-
-        // 見た目と当たり判定をつける
-        world->AddComponent<MeshComponent>(id);
         world->AddComponent<ColliderComponent>(id);
-
-        // 、半径0.5
         AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::White, ColliderType::Type_Sphere, 0.5f, 0.0f, 0.0f);
-
-        DebugLog("Spawned AttackSphere! ID: %d", id);
     }
-    // 回復球の生成
-    inline void CreateRecoverySphere(World* world, EntityID ownerID, DirectX::XMFLOAT3 pos, int heal) {
-        EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {1.0f, 1.0f, 1.0f} })
-            .AddComponent<RecoverySphereComponent>(RecoverySphereComponent{
-            // 古いメンバ(ownerID, currentRadius等)を消し、新しいメンバのみにする
-            .radius = 2.0f,
-            .healAmount = heal,
-            .isActive = true,
-            .rotationAngle = 0.0f
-                })
-            .Build();
 
-        // 見た目と当たり判定をつける
-        world->AddComponent<MeshComponent>(id);
-        world->AddComponent<ColliderComponent>(id);
-
-        // 緑の球、半径0.5 (Scale1.0のとき)
-        // ここでは ShapeType::SPHERE (半径1) なので Scaleを調整
-        AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::Green, ColliderType::Type_Sphere, 1.0f, 0.0f, 0.0f);
-
-        DebugLog("Spawned RecoverySphere (Item)! ID: %d", id);
-    }
-    // ★追加: 敵の弾を生成
     inline void CreateEnemyBullet(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir, int damage) {
-        // 小さな赤い球
         EntityID id = world->CreateEntity()
             .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.3f, 0.3f, 0.3f} })
             .AddComponent<BulletComponent>(BulletComponent{ .damage = damage, .lifeTime = 5.0f, .isActive = true })
             .Build();
-
         world->AddComponent<MeshComponent>(id);
         world->AddComponent<ColliderComponent>(id);
-
-        // メッシュと当たり判定 (球)
         AttachMeshAndCollider(id, world, ShapeType::SPHERE, Colors::Red, ColliderType::Type_Sphere, 0.3f, 0.0f, 0.0f);
-
-        // 物理挙動 (飛んでいく速度)
         if (!world->GetRegistry()->HasComponent<PhysicsComponent>(id)) {
-            // 弾速 (10.0f)
             float speed = 10.0f;
-            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{
-                .velocity = { dir.x * speed, dir.y * speed, dir.z * speed },
-                .useGravity = false // 重力の影響を受けない
-                });
+            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = { dir.x * speed, dir.y * speed, dir.z * speed }, .useGravity = false });
         }
-
-        DebugLog("Enemy Fired! ID: %d", id);
     }
-    // ★追加: プレイヤーの弾を生成
-    inline void CreatePlayerBullet(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir, int damage) {
-        // 小さな発光する弾
-        EntityID id = world->CreateEntity()
-            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.4f, 0.4f, 0.8f} }) // 少し細長く
-            // 定義順: damage, lifeTime, isActive, fromPlayer
-            .AddComponent<BulletComponent>(BulletComponent{
-                .damage = damage,
-                .lifeTime = 3.0f,
-                .isActive = true,
-                .fromPlayer = true // ★重要: プレイヤーの弾
-                })
-            .Build();
 
+    inline void CreatePlayerBullet(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir, int damage) {
+        EntityID id = world->CreateEntity()
+            .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.4f, 0.4f, 0.8f} })
+            .AddComponent<BulletComponent>(BulletComponent{ .damage = damage, .lifeTime = 3.0f, .isActive = true, .fromPlayer = true })
+            .Build();
         world->AddComponent<MeshComponent>(id);
         world->AddComponent<ColliderComponent>(id);
-
-        // 形は球か、カプセルっぽく見せるためにSphere
-        // 色はType Cに合わせてエメラルドグリーン
         AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 0.0f, 1.0f, 0.8f, 1.0f }, ColliderType::Type_Sphere, 0.8f, 0.0f, 0.0f);
-
-        // 物理挙動 (高速で直進)
         if (!world->GetRegistry()->HasComponent<PhysicsComponent>(id)) {
-            float speed = 25.0f; // 敵の弾より速く
-            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{
-                .velocity = { dir.x * speed, dir.y * speed, dir.z * speed },
-                .useGravity = false
-                });
+            float speed = 25.0f;
+            world->AddComponent<PhysicsComponent>(id, PhysicsComponent{ .velocity = { dir.x * speed, dir.y * speed, dir.z * speed }, .useGravity = false });
         }
-        DebugLog("Player Shot Fired! ID: %d", id);
     }
-    // ★追加: 爆発エフェクト生成関数
+
     inline void CreateExplosion(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
         for (int i = 0; i < count; ++i) {
             float speed = 5.0f + (rand() % 100) / 10.0f;
             float angleY = (rand() % 360) * 3.14f / 180.0f;
             float angleV = ((rand() % 180) - 90) * 3.14f / 180.0f;
-
             float vx = cosf(angleV) * sinf(angleY) * speed;
             float vy = sinf(angleV) * speed;
             float vz = cosf(angleV) * cosf(angleY) * speed;
-
             EntityID id = world->CreateEntity()
                 .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} })
-                .AddComponent<ParticleComponent>(ParticleComponent{
-                    .lifeTime = 0.5f + (rand() % 50) / 100.0f,
-                    .velocity = {vx, vy, vz},
-                    .useGravity = false, // 爆発は飛び散る
-                    .scaleSpeed = -2.0f,
-                    .type = ParticleType::Explosion
-                    })
+                .AddComponent<ParticleComponent>(ParticleComponent{ .lifeTime = 0.5f + (rand() % 50) / 100.0f, .velocity = {vx, vy, vz}, .useGravity = false, .scaleSpeed = -2.0f, .type = ParticleType::Explosion })
                 .Build();
-
             world->AddComponent<MeshComponent>(id);
-            // 爆発は赤いキューブや球など
             AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_None, 0, 0, 0);
         }
     }
-    // ★追加: 煙エフェクト (爆発に混ぜる)
+
     inline void CreateSmoke(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
         for (int i = 0; i < count; ++i) {
             float vx = (rand() % 100 - 50) / 20.0f;
-            float vy = (rand() % 100) / 20.0f + 1.0f; // 上昇する
+            float vy = (rand() % 100) / 20.0f + 1.0f;
             float vz = (rand() % 100 - 50) / 20.0f;
-
             EntityID id = world->CreateEntity()
                 .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.8f, 0.8f, 0.8f} })
-                .AddComponent<ParticleComponent>(ParticleComponent{
-                    .lifeTime = 1.0f + (rand() % 10) / 10.0f, // 長生き
-                    .velocity = {vx, vy, vz},
-                    .useGravity = false,
-                    .scaleSpeed = -0.3f, // ゆっくり小さくなる
-                    .type = ParticleType::Smoke // ★煙タイプ
-                    })
+                .AddComponent<ParticleComponent>(ParticleComponent{ .lifeTime = 1.0f + (rand() % 10) / 10.0f, .velocity = {vx, vy, vz}, .useGravity = false, .scaleSpeed = -0.3f, .type = ParticleType::Smoke })
                 .Build();
-
             world->AddComponent<MeshComponent>(id);
-            // 煙はグレーのキューブ
             AttachMeshAndCollider(id, world, ShapeType::CUBE, color, ColliderType::Type_None, 0, 0, 0);
         }
     }
 
-    // ★追加: マズルフラッシュ (発射時の閃光)
     inline void CreateMuzzleFlash(World* world, DirectX::XMFLOAT3 pos, DirectX::XMFLOAT3 dir) {
-        // 発射方向に少しずらす
-        pos.x += dir.x * 0.5f;
-        pos.y += dir.y * 0.5f;
-        pos.z += dir.z * 0.5f;
-
+        pos.x += dir.x * 0.5f; pos.y += dir.y * 0.5f; pos.z += dir.z * 0.5f;
         EntityID id = world->CreateEntity()
             .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.5f, 0.5f, 0.5f} })
-            .AddComponent<ParticleComponent>(ParticleComponent{
-                .lifeTime = 0.1f, // 一瞬で消える
-                .velocity = {0, 0, 0},
-                .useGravity = false,
-                .scaleSpeed = 5.0f, // 急激に広がる
-                .type = ParticleType::MuzzleFlash // ★閃光タイプ
-                })
+            .AddComponent<ParticleComponent>(ParticleComponent{ .lifeTime = 0.1f, .velocity = {0, 0, 0}, .useGravity = false, .scaleSpeed = 5.0f, .type = ParticleType::MuzzleFlash })
             .Build();
-
         world->AddComponent<MeshComponent>(id);
-        // 黄色/オレンジの球
         AttachMeshAndCollider(id, world, ShapeType::SPHERE, { 1.0f, 0.8f, 0.2f, 0.8f }, ColliderType::Type_None, 0, 0, 0);
     }
-    // ★追加: ヒットエフェクト生成 (火花を散らす)
+
     inline void CreateHitEffect(World* world, DirectX::XMFLOAT3 pos, int count, DirectX::XMFLOAT4 color) {
         for (int i = 0; i < count; ++i) {
-            // ランダムな速度を作る (-5.0 ~ +5.0)
             float vx = (rand() % 100 - 50) / 10.0f;
-            float vy = (rand() % 100) / 10.0f + 2.0f; // 上方向に跳ねさせる
+            float vy = (rand() % 100) / 10.0f + 2.0f;
             float vz = (rand() % 100 - 50) / 10.0f;
-
             EntityID id = world->CreateEntity()
-                .AddComponent<TransformComponent>(TransformComponent{
-                    .position = pos,
-                    .scale = {0.2f, 0.2f, 0.2f} // 小さく
-                    })
-                .AddComponent<ParticleComponent>(ParticleComponent{
-                    .lifeTime = 0.5f + (rand() % 10) / 20.0f, // 0.5~1.0秒で消える
-                    .velocity = {vx, vy, vz},
-                    .useGravity = true,  // 重力で落ちる
-                    .scaleSpeed = -0.5f  // 徐々に小さくなる
-                    })
+                .AddComponent<TransformComponent>(TransformComponent{ .position = pos, .scale = {0.2f, 0.2f, 0.2f} })
+                .AddComponent<ParticleComponent>(ParticleComponent{ .lifeTime = 0.5f + (rand() % 10) / 20.0f, .velocity = {vx, vy, vz}, .useGravity = true, .scaleSpeed = -0.5f })
                 .Build();
-
             world->AddComponent<MeshComponent>(id);
-            // 形は小さめのキューブ
             AttachMeshAndCollider(id, world, ShapeType::TETRAHEDRON, color, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
         }
-		DebugLog("Created Hit Effect at (%.2f, %.2f, %.2f)", pos.x, pos.y, pos.z);
     }
+
+    inline PartStatus GetPartStatus(PartType type, int modelID) {
+        PartStatus s = { 10.0f, 1.0f, 1.0f, 0.0f, 5.0f };
+        if (type == PartType::Head) {
+            if (modelID == 0) { s.hp = 15.0f; s.attack = 2.0f;  s.defense = 1.0f;  s.speed = 0.0f;  s.weight = 5.0f; }
+            if (modelID == 1) { s.hp = 30.0f; s.attack = 5.0f;  s.defense = 3.0f;  s.speed = -0.5f; s.weight = 12.0f; }
+            if (modelID == 2) { s.hp = 10.0f; s.attack = 1.0f;  s.defense = 0.5f;  s.speed = 1.5f;  s.weight = 3.0f; }
+            if (modelID == 3) { s.hp = 8.0f;  s.attack = 4.0f;  s.defense = 0.2f;  s.speed = 2.0f;  s.weight = 2.5f; }
+            if (modelID == 4) { s.hp = 35.0f; s.attack = 1.0f;  s.defense = 5.0f;  s.speed = -1.0f; s.weight = 15.0f; } 
+        }
+        else if (type == PartType::Body) {
+            if (modelID == 0) { s.hp = 40.0f; s.attack = 3.0f;  s.defense = 4.0f;  s.speed = 0.0f;  s.weight = 15.0f; }
+            if (modelID == 1) { s.hp = 70.0f; s.attack = 5.0f;  s.defense = 8.0f;  s.speed = -1.0f; s.weight = 30.0f; }
+            if (modelID == 2) { s.hp = 30.0f; s.attack = 2.0f;  s.defense = 2.0f;  s.speed = 2.0f;  s.weight = 10.0f; }
+            if (modelID == 3) { s.hp = 25.0f; s.attack = 8.0f;  s.defense = 1.0f;  s.speed = 3.0f;  s.weight = 8.0f; }
+            if (modelID == 4) { s.hp = 90.0f; s.attack = 2.0f;  s.defense = 12.0f; s.speed = -2.0f; s.weight = 40.0f; }
+        }
+        else if (type == PartType::ArmLeft || type == PartType::ArmRight) {
+            if (modelID == 0) { s.hp = 15.0f; s.attack = 4.0f;  s.defense = 2.0f;  s.speed = 0.0f;  s.weight = 5.0f; }
+            if (modelID == 1) { s.hp = 25.0f; s.attack = 8.0f;  s.defense = 4.0f;  s.speed = -0.5f; s.weight = 10.0f; }
+            if (modelID == 2) { s.hp = 10.0f; s.attack = 3.0f;  s.defense = 1.0f;  s.speed = 0.5f;  s.weight = 3.0f; }
+            if (modelID == 3) { s.hp = 8.0f;  s.attack = 10.0f; s.defense = 0.5f;  s.speed = 1.0f;  s.weight = 2.0f; }
+            if (modelID == 4) { s.hp = 30.0f; s.attack = 5.0f;  s.defense = 6.0f;  s.speed = -1.0f; s.weight = 12.0f; }
+        }
+        else if (type == PartType::LegLeft || type == PartType::LegRight) {
+            if (modelID == 0) { s.hp = 15.0f; s.attack = 1.0f;  s.defense = 3.0f;  s.speed = 5.0f;  s.weight = 10.0f; }
+            if (modelID == 1) { s.hp = 25.0f; s.attack = 2.0f;  s.defense = 6.0f;  s.speed = 3.0f;  s.weight = 20.0f; }
+            if (modelID == 2) { s.hp = 10.0f; s.attack = 0.0f;  s.defense = 1.5f;  s.speed = 8.0f;  s.weight = 5.0f; }
+            if (modelID == 3) { s.hp = 10.0f; s.attack = 5.0f;  s.defense = 1.0f;  s.speed = 10.0f; s.weight = 4.0f; }
+            if (modelID == 4) { s.hp = 35.0f; s.attack = 1.0f;  s.defense = 8.0f;  s.speed = 1.0f;  s.weight = 25.0f; }
+        }
+        return s;
+    }
+inline EntityID AssembleCustomPlayer(World* world, const EntitySpawnParams& params, const CustomizeData& cData, bool isEnemy = false) {
+    EntityID playerCore = world->CreateEntity().Build();
+    TransformComponent trans;
+    trans.position = params.position;
+    trans.scale = params.scale;
+    world->AddComponent<TransformComponent>(playerCore, trans);
+
+    PartStatus headS = GetPartStatus(PartType::Head, cData.headID);
+    PartStatus bodyS = GetPartStatus(PartType::Body, cData.bodyID);
+    PartStatus waistS = GetPartStatus(PartType::Waist, cData.waistID);
+    PartStatus armLS = GetPartStatus(PartType::ArmLeft, cData.armLeftID);
+    PartStatus armRS = GetPartStatus(PartType::ArmRight, cData.armRightID);
+    PartStatus legS = GetPartStatus(PartType::LegLeft, cData.legID);
+
+    PlayerComponent pComp;
+    pComp.maxHp = headS.hp + bodyS.hp + waistS.hp + armLS.hp + armRS.hp + legS.hp * 2.0f;
+    pComp.currentHp = pComp.maxHp;
+    pComp.totalAttack = headS.attack + bodyS.attack + waistS.attack + armLS.attack + armRS.attack + legS.attack * 2.0f;
+    pComp.totalDefense = headS.defense + bodyS.defense + waistS.defense + armLS.defense + armRS.defense + legS.defense * 2.0f;
+    pComp.totalWeight = headS.weight + bodyS.weight + waistS.weight + armLS.weight + armRS.weight + legS.weight * 2.0f;
+
+    pComp.moveSpeed = 4.0f + legS.speed - (pComp.totalWeight * 0.04f);
+    if (pComp.moveSpeed < 2.0f) pComp.moveSpeed = 2.0f;
+    pComp.dashSpeed = pComp.moveSpeed * 1.6f;
+    pComp.acceleration = 25.0f - (pComp.totalWeight * 0.15f);
+    if (pComp.acceleration < 5.0f) pComp.acceleration = 5.0f;
+    pComp.deceleration = 20.0f - (pComp.totalWeight * 0.2f);
+    if (pComp.deceleration < 3.0f) pComp.deceleration = 3.0f;
+    pComp.turnSpeed = 15.0f - (pComp.totalWeight * 0.1f);
+    if (pComp.turnSpeed < 3.0f) pComp.turnSpeed = 3.0f;
+    pComp.jumpPower = 7.0f - (pComp.totalWeight * 0.03f);
+    if (pComp.jumpPower < 3.0f) pComp.jumpPower = 3.0f;
+
+    pComp.isGrounded = params.isGrounded;
+    pComp.type = (PlayerType)cData.bodyID;
+
+    if (isEnemy) {
+        world->AddComponent<EnemyComponent>(playerCore, EnemyComponent{});
+        world->AddComponent<StatusComponent>(playerCore, StatusComponent{ .hp = (int)pComp.maxHp, .maxHp = (int)pComp.maxHp, .attackPower = (int)pComp.totalAttack });
+        world->AddComponent<PhysicsComponent>(playerCore, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = true });
+        world->AddComponent<ColliderComponent>(playerCore);
+        world->GetComponent<ColliderComponent>(playerCore).SetCapsule(0.5f, 2.0f);
+    }
+    else {
+        world->AddComponent<PlayerComponent>(playerCore, pComp);
+        world->AddComponent<StatusComponent>(playerCore, StatusComponent{ .hp = (int)pComp.maxHp, .maxHp = (int)pComp.maxHp, .attackPower = (int)pComp.totalAttack });
+        world->AddComponent<PhysicsComponent>(playerCore, PhysicsComponent{ .velocity = {0,0,0}, .useGravity = true });
+        world->AddComponent<ColliderComponent>(playerCore);
+        world->GetComponent<ColliderComponent>(playerCore).SetCapsule(0.5f, 2.0f);
+    }
+
+    const float HEAD_Y = 1.7f;
+    const float SHOULDER_X = 0.65f;
+    const float SHOULDER_Y = 1.2f;
+    const float BODY_Y = 1.0f;
+    const float WAIST_Y = 0.55f;
+    const float HIP_X = 0.35f;
+    const float HIP_Y = 0.1f;
+
+    auto BuildFrame = [&](PartType pType, EntityID parentEnt, DirectX::XMFLOAT3 localOffset) -> EntityID {
+        EntityID pivot = world->CreateEntity().Build();
+        world->AddComponent<TransformComponent>(pivot, TransformComponent{ .position = localOffset, .scale = {1.0f, 1.0f, 1.0f} });
+
+        if (isEnemy) world->AddComponent<EnemyPartComponent>(pivot, EnemyPartComponent{ .parentID = (int)parentEnt, .partType = pType, .partModelID = -1, .baseOffset = localOffset });
+        else world->AddComponent<PlayerPartComponent>(pivot, PlayerPartComponent{ .parentID = (int)parentEnt, .partType = pType, .partModelID = -1, .baseOffset = localOffset });
+
+        EntityID visual = world->CreateEntity().Build();
+        world->AddComponent<TransformComponent>(visual, TransformComponent{ .position = {0.0f, 0.0f, 0.0f}, .scale = {0.08f, 0.08f, 0.08f} });
+        world->AddComponent<MeshComponent>(visual);
+        AttachMeshAndCollider(visual, world, ShapeType::CYLINDER, { 0.2f, 0.2f, 0.2f, 1.0f }, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
+
+        if (isEnemy) world->AddComponent<EnemyPartComponent>(visual, EnemyPartComponent{ .parentID = (int)pivot, .partType = pType, .partModelID = -2, .baseOffset = {0,0,0} });
+        else world->AddComponent<PlayerPartComponent>(visual, PlayerPartComponent{ .parentID = (int)pivot, .partType = pType, .partModelID = -2, .baseOffset = {0,0,0} });
+
+        return pivot;
+        };
+
+    EntityID frameWaist = BuildFrame(PartType::Waist, playerCore, { 0.0f, WAIST_Y, 0.0f });
+    EntityID frameBody = BuildFrame(PartType::Body, frameWaist, { 0.0f, BODY_Y - WAIST_Y, 0.0f });
+    EntityID frameHead = BuildFrame(PartType::Head, frameBody, { 0.0f, HEAD_Y - 1.2f, 0.0f });
+    EntityID frameShL = BuildFrame(PartType::ShoulderLeft, frameBody, { -SHOULDER_X, SHOULDER_Y - BODY_Y, 0.0f });
+    EntityID frameShR = BuildFrame(PartType::ShoulderRight, frameBody, { SHOULDER_X, SHOULDER_Y - BODY_Y, 0.0f });
+    EntityID frameArmL = BuildFrame(PartType::ArmLeft, frameShL, { 0.0f, -0.4f, 0.0f });
+    EntityID frameArmR = BuildFrame(PartType::ArmRight, frameShR, { 0.0f, -0.4f, 0.0f });
+    EntityID frameLegL = BuildFrame(PartType::LegLeft, frameWaist, { -HIP_X, HIP_Y - WAIST_Y, 0.0f });
+    EntityID frameLegR = BuildFrame(PartType::LegRight, frameWaist, { HIP_X, HIP_Y - WAIST_Y, 0.0f });
+
+    auto BuildPart = [&](PartType pType, int modelID, DirectX::XMFLOAT3 absOffset, DirectX::XMFLOAT3 rot, DirectX::XMFLOAT3 scale, DirectX::XMFLOAT4 color, ShapeType shape, PartStatus status) {
+        EntityID parentFrame = playerCore;
+        DirectX::XMFLOAT3 frameAbsPos = { 0.0f, 0.0f, 0.0f };
+
+        if (pType == PartType::Waist) { parentFrame = frameWaist; frameAbsPos = { 0.0f, WAIST_Y, 0.0f }; }
+        else if (pType == PartType::Body) { parentFrame = frameBody; frameAbsPos = { 0.0f, BODY_Y, 0.0f }; }
+        else if (pType == PartType::Head) { parentFrame = frameHead; frameAbsPos = { 0.0f, HEAD_Y, 0.0f }; }
+        else if (pType == PartType::ShoulderLeft) { parentFrame = frameShL; frameAbsPos = { -SHOULDER_X, SHOULDER_Y, 0.0f }; }
+        else if (pType == PartType::ShoulderRight) { parentFrame = frameShR; frameAbsPos = { SHOULDER_X, SHOULDER_Y, 0.0f }; }
+        else if (pType == PartType::ArmLeft) { parentFrame = frameArmL; frameAbsPos = { -SHOULDER_X, SHOULDER_Y - 0.4f, 0.0f }; }
+        else if (pType == PartType::ArmRight) { parentFrame = frameArmR; frameAbsPos = { SHOULDER_X, SHOULDER_Y - 0.4f, 0.0f }; }
+        else if (pType == PartType::LegLeft) { parentFrame = frameLegL; frameAbsPos = { -HIP_X, HIP_Y, 0.0f }; }
+        else if (pType == PartType::LegRight) { parentFrame = frameLegR; frameAbsPos = { HIP_X, HIP_Y, 0.0f }; }
+
+        DirectX::XMFLOAT3 localOffset = { absOffset.x - frameAbsPos.x, absOffset.y - frameAbsPos.y, absOffset.z - frameAbsPos.z };
+
+        EntityID armor = world->CreateEntity().Build();
+        world->AddComponent<TransformComponent>(armor, TransformComponent{ .position = localOffset, .rotation = rot, .scale = scale });
+        world->AddComponent<MeshComponent>(armor);
+        AttachMeshAndCollider(armor, world, shape, color, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
+
+        if (isEnemy) {
+            world->AddComponent<EnemyPartComponent>(armor, EnemyPartComponent{ .parentID = (int)parentFrame, .partType = pType, .partModelID = modelID, .baseOffset = localOffset, .baseRotation = rot });
+        }
+        else {
+            world->AddComponent<PlayerPartComponent>(armor, PlayerPartComponent{ .parentID = (int)parentFrame, .partType = pType, .partModelID = modelID, .baseOffset = localOffset, .baseRotation = rot, .status = status });
+        }
+        };
+    DirectX::XMFLOAT4 cA_M = { 0.8f, 0.85f, 0.9f, 1.0f }; DirectX::XMFLOAT4 cA_S = { 0.2f, 0.3f,  0.5f, 1.0f }; DirectX::XMFLOAT4 cA_G = { 0.0f, 1.0f,  0.5f, 1.0f }; DirectX::XMFLOAT4 cA_F = { 0.3f, 0.3f,  0.3f, 1.0f };
+    DirectX::XMFLOAT4 cB_M = { 0.4f, 0.5f,  0.3f, 1.0f }; DirectX::XMFLOAT4 cB_S = { 0.2f, 0.2f,  0.2f, 1.0f }; DirectX::XMFLOAT4 cB_F = { 0.15f,0.15f, 0.15f,1.0f };
+    DirectX::XMFLOAT4 cC_M = { 0.15f,0.15f, 0.15f,1.0f }; DirectX::XMFLOAT4 cC_S = { 0.5f, 0.0f,  0.8f, 1.0f }; DirectX::XMFLOAT4 cC_F = { 0.4f, 0.4f,  0.4f, 1.0f };
+    DirectX::XMFLOAT4 cD_M = { 0.1f, 0.15f, 0.3f, 1.0f }; DirectX::XMFLOAT4 cD_S = { 0.7f, 0.1f,  0.1f, 1.0f }; DirectX::XMFLOAT4 cD_F = { 0.2f, 0.2f,  0.25f,1.0f };
+    DirectX::XMFLOAT4 cE_M = { 0.7f, 0.4f,  0.1f, 1.0f }; DirectX::XMFLOAT4 cE_S = { 0.3f, 0.3f,  0.3f, 1.0f }; DirectX::XMFLOAT4 cE_G = { 1.0f, 0.5f,  0.0f, 1.0f }; DirectX::XMFLOAT4 cE_F = { 0.2f, 0.2f,  0.2f, 1.0f };
+
+    if (isEnemy) {
+        DirectX::XMFLOAT4 eMain = { 0.2f, 0.2f, 0.25f, 1.0f };
+        DirectX::XMFLOAT4 eSub = { 0.1f, 0.1f, 0.1f, 1.0f };
+        DirectX::XMFLOAT4 eGlow1 = { 1.0f, 0.0f, 0.2f, 1.0f };
+        DirectX::XMFLOAT4 eGlow2 = { 0.8f, 0.0f, 1.0f, 1.0f };
+        DirectX::XMFLOAT4 eGlow = (cData.headID == 2) ? eGlow2 : eGlow1;
+
+        cA_M = eMain; cA_S = eSub; cA_G = eGlow; cA_F = eSub;
+        cB_M = eMain; cB_S = eSub; cB_F = eSub;
+        cC_M = eMain; cC_S = eGlow; cC_F = eSub;
+        cD_M = eMain; cD_S = eSub; cD_F = eSub;
+        cE_M = eMain; cE_S = eSub; cE_G = eGlow; cE_F = eSub;
+    }
+
+    //頭部
+    if (cData.headID == 0) {
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y - 0.05f, 0 }, { 0,0,0 }, { 0.15f, 0.15f, 0.15f }, cA_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y + 0.05f, 0 }, { 0,0,0 }, { 0.25f, 0.25f, 0.25f }, cA_M, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y + 0.05f, 0.15f }, { 0,0,0 }, { 0.18f, 0.08f, 0.05f }, cA_G, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y + 0.12f, 0.15f }, { 0,0,0 }, { 0.12f, 0.04f, 0.05f }, cA_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y + 0.15f, -0.05f }, { -0.2f,0,0 }, { 0.08f, 0.2f, 0.08f }, cA_S, ShapeType::WEDGE, headS);
+        BuildPart(PartType::Head, 0, { -0.15f, HEAD_Y + 0.05f, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.08f, 0.1f, 0.1f }, cA_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 0, { 0.15f, HEAD_Y + 0.05f, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.08f, 0.1f, 0.1f }, cA_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 0, { 0, HEAD_Y - 0.02f, 0.12f }, { 0,0,0 }, { 0.15f, 0.05f, 0.1f }, cA_S, ShapeType::WEDGE, headS);
+    }
+    else if (cData.headID == 1) {
+        BuildPart(PartType::Head, 1, { 0, HEAD_Y - 0.05f, 0 }, { 0,0,0 }, { 0.25f, 0.15f, 0.25f }, cB_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 1, { 0, HEAD_Y + 0.05f, 0 }, { 0,0,0 }, { 0.35f, 0.25f, 0.35f }, cB_M, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 1, { 0, HEAD_Y + 0.05f, 0.18f }, { 0,0,0 }, { 0.35f, 0.15f, 0.05f }, cB_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 1, { 0, HEAD_Y + 0.12f, 0.18f }, { 0,0,0 }, { 0.15f, 0.05f, 0.05f }, cB_F, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 1, { 0, HEAD_Y + 0.2f, -0.1f }, { 0,0,0 }, { 0.35f, 0.05f, 0.35f }, cB_M, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 1, { -0.2f, HEAD_Y + 0.05f, 0.1f }, { 0,0,0 }, { 0.05f, 0.2f, 0.15f }, cB_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 1, { 0.2f, HEAD_Y + 0.05f, 0.1f }, { 0,0,0 }, { 0.05f, 0.2f, 0.15f }, cB_S, ShapeType::CUBE, headS);
+    }
+    else if (cData.headID == 2) {
+        BuildPart(PartType::Head, 2, { 0, HEAD_Y - 0.05f, 0 }, { 0,0,0 }, { 0.12f, 0.15f, 0.12f }, cC_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 2, { 0, HEAD_Y + 0.05f, 0.05f }, { 0.1f,0,0 }, { 0.2f, 0.3f, 0.3f }, cC_M, ShapeType::WEDGE, headS);
+        BuildPart(PartType::Head, 2, { 0, HEAD_Y + 0.15f, -0.1f }, { -0.3f,0,0 }, { 0.1f, 0.15f, 0.2f }, cC_S, ShapeType::DOUBLE_PYRAMID, headS);
+        BuildPart(PartType::Head, 2, { 0, HEAD_Y + 0.05f, 0.22f }, { 0,0,0 }, { 0.08f, 0.08f, 0.08f }, cC_F, ShapeType::SPHERE, headS);
+        BuildPart(PartType::Head, 2, { 0, HEAD_Y + 0.15f, 0.15f }, { 0,0,0 }, { 0.15f, 0.05f, 0.1f }, cC_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 2, { -0.1f, HEAD_Y + 0.1f, 0.15f }, { 0,0,0 }, { 0.02f, 0.1f, 0.1f }, cC_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 2, { 0.1f, HEAD_Y + 0.1f, 0.15f }, { 0,0,0 }, { 0.02f, 0.1f, 0.1f }, cC_S, ShapeType::CUBE, headS);
+    }
+    else if (cData.headID == 3) {
+        BuildPart(PartType::Head, 3, { 0, HEAD_Y - 0.08f, 0 }, { 0,0,0 }, { 0.3f, 0.15f, 0.3f }, cD_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 3, { 0, HEAD_Y, 0 }, { 0,0,0 }, { 0.4f, 0.25f, 0.4f }, cD_M, ShapeType::HEXAGONAL_PRISM, headS);
+        BuildPart(PartType::Head, 3, { 0, HEAD_Y + 0.15f, 0 }, { 0,0,0 }, { 0.35f, 0.05f, 0.35f }, cD_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 3, { 0, HEAD_Y, 0.22f }, { 0,0,0 }, { 0.25f, 0.08f, 0.05f }, cD_S, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 3, { 0, HEAD_Y - 0.08f, 0.22f }, { 0,0,0 }, { 0.3f, 0.1f, 0.1f }, cD_M, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 3, { -0.22f, HEAD_Y, 0 }, { 0,0,0 }, { 0.08f, 0.2f, 0.2f }, cD_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 3, { 0.22f, HEAD_Y, 0 }, { 0,0,0 }, { 0.08f, 0.2f, 0.2f }, cD_F, ShapeType::CYLINDER, headS);
+    }
+    else if (cData.headID == 4) {
+        BuildPart(PartType::Head, 4, { 0, HEAD_Y - 0.05f, 0 }, { 0,0,0 }, { 0.18f, 0.15f, 0.18f }, cE_F, ShapeType::CYLINDER, headS);
+        BuildPart(PartType::Head, 4, { 0, HEAD_Y + 0.05f, 0 }, { 0,0,0 }, { 0.25f, 0.25f, 0.25f }, cE_M, ShapeType::CUBE, headS);
+        BuildPart(PartType::Head, 4, { 0, HEAD_Y + 0.15f, 0.15f }, { -0.3f,0,0 }, { 0.08f, 0.35f, 0.2f }, cE_S, ShapeType::DOUBLE_PYRAMID, headS);
+        BuildPart(PartType::Head, 4, { 0, HEAD_Y + 0.02f, 0.15f }, { 0,0,0 }, { 0.12f, 0.12f, 0.08f }, cE_G, ShapeType::SPHERE, headS);
+        BuildPart(PartType::Head, 4, { -0.15f, HEAD_Y + 0.05f, -0.1f }, { 0.2f,-0.2f,0 }, { 0.05f, 0.2f, 0.2f }, cE_M, ShapeType::WEDGE, headS);
+        BuildPart(PartType::Head, 4, { 0.15f, HEAD_Y + 0.05f, -0.1f }, { 0.2f,0.2f,0 }, { 0.05f, 0.2f, 0.2f }, cE_M, ShapeType::WEDGE, headS);
+        BuildPart(PartType::Head, 4, { 0, HEAD_Y - 0.05f, 0.15f }, { 0.2f,0,0 }, { 0.1f, 0.15f, 0.1f }, cE_F, ShapeType::WEDGE, headS);
+    }
+
+    //胴体
+    if (cData.bodyID == 0) {
+        BuildPart(PartType::Body, 0, { 0, BODY_Y - 0.05f, 0 }, { 0,0,0 }, { 0.35f, 0.45f, 0.25f }, cA_F, ShapeType::CYLINDER, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y + 0.15f, 0.05f }, { -0.1f,0,0 }, { 0.5f, 0.35f, 0.35f }, cA_S, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y - 0.05f, 0.15f }, { 0.1f,0,0 }, { 0.4f, 0.25f, 0.15f }, cA_M, ShapeType::WEDGE, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y + 0.25f, 0.15f }, { 0,0,0 }, { 0.2f, 0.1f, 0.1f }, cA_G, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y + 0.35f, 0 }, { 0,0,0 }, { 0.3f, 0.1f, 0.25f }, cA_M, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { -0.15f, BODY_Y + 0.15f, 0.32f }, { 0,0,0 }, { 0.1f, 0.15f, 0.05f }, cA_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { 0.15f, BODY_Y + 0.15f, 0.32f }, { 0,0,0 }, { 0.1f, 0.15f, 0.05f }, cA_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y + 0.15f, -0.25f }, { 0,0,0 }, { 0.35f, 0.45f, 0.25f }, cA_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 0, { 0, BODY_Y, -0.3f }, { -0.2f,0,0 }, { 0.2f, 0.15f, 0.1f }, cA_M, ShapeType::WEDGE, bodyS);
+    }
+    else if (cData.bodyID == 1) {
+        BuildPart(PartType::Body, 1, { 0, BODY_Y + 0.1f, 0 }, { 0,0,0 }, { 0.65f, 0.7f, 0.5f }, cB_M, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 1, { 0, BODY_Y + 0.2f, 0.28f }, { 0,0,0 }, { 0.45f, 0.35f, 0.25f }, cB_S, ShapeType::TRUNCATED_CONE, bodyS);
+        BuildPart(PartType::Body, 1, { 0, BODY_Y - 0.05f, 0.28f }, { 0,0,0 }, { 0.55f, 0.2f, 0.15f }, cB_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 1, { -0.2f, BODY_Y + 0.2f, 0.4f }, { 0,0,0 }, { 0.1f, 0.15f, 0.05f }, cB_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 1, { 0.2f, BODY_Y + 0.2f, 0.4f }, { 0,0,0 }, { 0.1f, 0.15f, 0.05f }, cB_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 1, { 0, BODY_Y + 0.1f, -0.35f }, { 0,0,0 }, { 0.55f, 0.5f, 0.25f }, cB_F, ShapeType::HEXAGONAL_PRISM, bodyS);
+        BuildPart(PartType::Body, 1, { 0, BODY_Y + 0.45f, 0 }, { 0,0,0 }, { 0.7f, 0.15f, 0.5f }, cB_M, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 1, { 0, BODY_Y - 0.1f, 0 }, { 0,0,0 }, { 0.4f, 0.3f, 0.4f }, cB_F, ShapeType::CYLINDER, bodyS);
+    }
+    else if (cData.bodyID == 2) {
+        BuildPart(PartType::Body, 2, { 0, BODY_Y + 0.1f, 0 }, { 0.1f,0,0 }, { 0.4f, 0.65f, 0.4f }, cC_M, ShapeType::DOUBLE_PYRAMID, bodyS);
+        BuildPart(PartType::Body, 2, { 0, BODY_Y + 0.25f, 0.2f }, { -0.2f,0,0 }, { 0.35f, 0.3f, 0.25f }, cC_S, ShapeType::WEDGE, bodyS);
+        BuildPart(PartType::Body, 2, { 0, BODY_Y, 0.25f }, { 0,0,0 }, { 0.25f, 0.2f, 0.15f }, cC_M, ShapeType::HEXAGONAL_PRISM, bodyS);
+        BuildPart(PartType::Body, 2, { 0, BODY_Y + 0.35f, 0.1f }, { -0.1f,0,0 }, { 0.2f, 0.1f, 0.15f }, cC_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 2, { -0.2f, BODY_Y + 0.1f, -0.2f }, { 0.2f,0,0 }, { 0.15f, 0.4f, 0.2f }, cC_F, ShapeType::CYLINDER, bodyS);
+        BuildPart(PartType::Body, 2, { 0.2f, BODY_Y + 0.1f, -0.2f }, { 0.2f,0,0 }, { 0.15f, 0.4f, 0.2f }, cC_F, ShapeType::CYLINDER, bodyS);
+        BuildPart(PartType::Body, 2, { -0.2f, BODY_Y - 0.1f, -0.25f }, { 0.4f,0,0 }, { 0.1f, 0.2f, 0.1f }, cC_S, ShapeType::DOUBLE_PYRAMID, bodyS);
+        BuildPart(PartType::Body, 2, { 0.2f, BODY_Y - 0.1f, -0.25f }, { 0.4f,0,0 }, { 0.1f, 0.2f, 0.1f }, cC_S, ShapeType::DOUBLE_PYRAMID, bodyS);
+    }
+    else if (cData.bodyID == 3) {
+        BuildPart(PartType::Body, 3, { 0, BODY_Y + 0.1f, 0 }, { 0,0,0 }, { 0.75f, 0.7f, 0.55f }, cD_M, ShapeType::HEXAGONAL_PRISM, bodyS);
+        BuildPart(PartType::Body, 3, { 0, BODY_Y + 0.15f, 0.32f }, { 0,0,0 }, { 0.55f, 0.4f, 0.15f }, cD_S, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 3, { 0, BODY_Y - 0.05f, 0.32f }, { 0,0,0 }, { 0.4f, 0.2f, 0.1f }, cD_M, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 3, { 0, BODY_Y + 0.35f, 0.15f }, { 0,0,0 }, { 0.65f, 0.15f, 0.2f }, cD_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 3, { -0.32f, BODY_Y, 0.3f }, { 0,0,0 }, { 0.15f, 0.4f, 0.15f }, cD_F, ShapeType::CYLINDER, bodyS);
+        BuildPart(PartType::Body, 3, { 0.32f, BODY_Y, 0.3f }, { 0,0,0 }, { 0.15f, 0.4f, 0.15f }, cD_F, ShapeType::CYLINDER, bodyS);
+        BuildPart(PartType::Body, 3, { 0, BODY_Y + 0.1f, -0.3f }, { 0,0,0 }, { 0.6f, 0.5f, 0.15f }, cD_F, ShapeType::CUBE, bodyS);
+    }
+    else if (cData.bodyID == 4) {
+        BuildPart(PartType::Body, 4, { 0, BODY_Y + 0.05f, 0.05f }, { -0.1f,0,0 }, { 0.45f, 0.65f, 0.45f }, cE_M, ShapeType::WEDGE, bodyS);
+        BuildPart(PartType::Body, 4, { 0, BODY_Y + 0.1f, -0.15f }, { 0,0,0 }, { 0.3f, 0.3f, 0.3f }, cE_G, ShapeType::SPHERE, bodyS);
+        BuildPart(PartType::Body, 4, { 0, BODY_Y + 0.2f, 0.3f }, { 0,0,0 }, { 0.2f, 0.5f, 0.2f }, cE_S, ShapeType::DOUBLE_PYRAMID, bodyS);
+        BuildPart(PartType::Body, 4, { -0.25f, BODY_Y + 0.2f, 0.2f }, { -0.2f,0,0.2f }, { 0.15f, 0.4f, 0.15f }, cE_S, ShapeType::WEDGE, bodyS);
+        BuildPart(PartType::Body, 4, { 0.25f, BODY_Y + 0.2f, 0.2f }, { -0.2f,0,-0.2f }, { 0.15f, 0.4f, 0.15f }, cE_S, ShapeType::WEDGE, bodyS);
+        BuildPart(PartType::Body, 4, { 0, BODY_Y - 0.1f, 0.15f }, { 0.2f,0,0 }, { 0.3f, 0.2f, 0.2f }, cE_F, ShapeType::CUBE, bodyS);
+        BuildPart(PartType::Body, 4, { 0, BODY_Y + 0.35f, 0 }, { -0.2f,0,0 }, { 0.4f, 0.15f, 0.3f }, cE_M, ShapeType::CUBE, bodyS);
+    }
+
+    //腰部
+    if (cData.waistID == 0) {
+        BuildPart(PartType::Waist, 0, { 0, WAIST_Y, 0 }, { 0,0,0 }, { 0.4f, 0.3f, 0.35f }, cA_M, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 0, { 0, WAIST_Y - 0.1f, 0.25f }, { -0.1f,0,0 }, { 0.3f, 0.35f, 0.08f }, cA_S, ShapeType::WEDGE, waistS);
+        BuildPart(PartType::Waist, 0, { 0, WAIST_Y - 0.1f, -0.25f }, { 0.1f,0,0 }, { 0.4f, 0.3f, 0.08f }, cA_M, ShapeType::WEDGE, waistS);
+        BuildPart(PartType::Waist, 0, { -0.28f, WAIST_Y - 0.1f, 0 }, { 0,0,0.1f }, { 0.08f, 0.4f, 0.28f }, cA_F, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 0, { 0.28f, WAIST_Y - 0.1f, 0 }, { 0,0,-0.1f }, { 0.08f, 0.4f, 0.28f }, cA_F, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 0, { 0, WAIST_Y - 0.15f, 0 }, { 0,0,0 }, { 0.2f, 0.2f, 0.2f }, cA_F, ShapeType::CYLINDER, waistS);
+    }
+    else if (cData.waistID == 1) {
+        BuildPart(PartType::Waist, 1, { 0, WAIST_Y, 0 }, { 0,0,0 }, { 0.65f, 0.4f, 0.5f }, cB_M, ShapeType::HEXAGONAL_PRISM, waistS);
+        BuildPart(PartType::Waist, 1, { 0, WAIST_Y - 0.05f, 0.3f }, { 0,0,0 }, { 0.45f, 0.4f, 0.15f }, cB_S, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 1, { 0, WAIST_Y - 0.05f, -0.3f }, { 0,0,0 }, { 0.55f, 0.4f, 0.15f }, cB_F, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 1, { -0.38f, WAIST_Y - 0.1f, 0 }, { 0,0,0 }, { 0.18f, 0.45f, 0.35f }, cB_M, ShapeType::CYLINDER, waistS);
+        BuildPart(PartType::Waist, 1, { 0.38f, WAIST_Y - 0.1f, 0 }, { 0,0,0 }, { 0.18f, 0.45f, 0.35f }, cB_M, ShapeType::CYLINDER, waistS);
+        BuildPart(PartType::Waist, 1, { 0, WAIST_Y + 0.15f, 0.28f }, { 0,0,0 }, { 0.25f, 0.15f, 0.1f }, cB_F, ShapeType::CUBE, waistS);
+    }
+    else if (cData.waistID == 2) {
+        BuildPart(PartType::Waist, 2, { 0, WAIST_Y, 0 }, { 0,0,0 }, { 0.4f, 0.25f, 0.35f }, cC_M, ShapeType::TRUNCATED_CONE, waistS);
+        BuildPart(PartType::Waist, 2, { 0, WAIST_Y - 0.1f, 0.22f }, { -0.2f,0,0 }, { 0.2f, 0.3f, 0.08f }, cC_S, ShapeType::WEDGE, waistS);
+        BuildPart(PartType::Waist, 2, { 0, WAIST_Y - 0.2f, -0.25f }, { 0.3f,0,0 }, { 0.25f, 0.5f, 0.1f }, cC_S, ShapeType::WEDGE, waistS);
+        BuildPart(PartType::Waist, 2, { -0.25f, WAIST_Y - 0.05f, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.1f, 0.2f, 0.2f }, cC_F, ShapeType::DOUBLE_PYRAMID, waistS);
+        BuildPart(PartType::Waist, 2, { 0.25f, WAIST_Y - 0.05f, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.1f, 0.2f, 0.2f }, cC_F, ShapeType::DOUBLE_PYRAMID, waistS);
+        BuildPart(PartType::Waist, 2, { 0, WAIST_Y - 0.15f, 0 }, { 0,0,0 }, { 0.15f, 0.2f, 0.15f }, cC_F, ShapeType::CYLINDER, waistS);
+    }
+    else if (cData.waistID == 3) {
+        BuildPart(PartType::Waist, 3, { 0, WAIST_Y, 0 }, { 0,0,0 }, { 0.65f, 0.35f, 0.5f }, cD_M, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 3, { 0, WAIST_Y - 0.25f, 0 }, { 0,0,0 }, { 0.95f, 0.5f, 0.8f }, cD_S, ShapeType::TRUNCATED_CONE, waistS);
+        BuildPart(PartType::Waist, 3, { 0, WAIST_Y - 0.3f, 0.42f }, { 0,0,0 }, { 0.4f, 0.25f, 0.08f }, cD_F, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 3, { -0.45f, WAIST_Y - 0.3f, 0 }, { 0,0,0 }, { 0.1f, 0.35f, 0.3f }, cD_F, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 3, { 0.45f, WAIST_Y - 0.3f, 0 }, { 0,0,0 }, { 0.1f, 0.35f, 0.3f }, cD_F, ShapeType::CUBE, waistS);
+    }
+    else if (cData.waistID == 4) {
+        BuildPart(PartType::Waist, 4, { 0, WAIST_Y, 0 }, { 0,0,0 }, { 0.45f, 0.3f, 0.35f }, cE_M, ShapeType::CUBE, waistS);
+        BuildPart(PartType::Waist, 4, { 0, WAIST_Y - 0.15f, 0.22f }, { -0.2f,0,0 }, { 0.25f, 0.45f, 0.12f }, cE_G, ShapeType::WEDGE, waistS);
+        BuildPart(PartType::Waist, 4, { -0.28f, WAIST_Y - 0.2f, 0.15f }, { -0.3f,0,0.4f }, { 0.15f, 0.45f, 0.15f }, cE_S, ShapeType::DOUBLE_PYRAMID, waistS);
+        BuildPart(PartType::Waist, 4, { 0.28f, WAIST_Y - 0.2f, 0.15f }, { -0.3f,0,-0.4f }, { 0.15f, 0.45f, 0.15f }, cE_S, ShapeType::DOUBLE_PYRAMID, waistS);
+        BuildPart(PartType::Waist, 4, { 0, WAIST_Y - 0.15f, -0.2f }, { 0.2f,0,0 }, { 0.3f, 0.35f, 0.1f }, cE_F, ShapeType::WEDGE, waistS);
+    }
+
+    //腕部
+    auto BuildArm = [&](PartType shoulderT, PartType armT, int modelID, float dirX, PartStatus status) {
+        float sX = dirX * SHOULDER_X;
+        float armY = SHOULDER_Y - 0.4f;
+
+        if (modelID == 0) {
+            BuildPart(shoulderT, 0, { sX - dirX * 0.1f, SHOULDER_Y, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.15f, 0.2f, 0.15f }, cA_F, ShapeType::CYLINDER, status);
+            BuildPart(shoulderT, 0, { sX + dirX * 0.05f, SHOULDER_Y + 0.05f, 0 }, { 0,0,0 }, { 0.35f, 0.3f, 0.35f }, cA_M, ShapeType::CUBE, status);
+            BuildPart(shoulderT, 0, { sX + dirX * 0.28f, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.15f, 0.4f, 0.4f }, cA_S, ShapeType::WEDGE, status);
+            BuildPart(shoulderT, 0, { sX + dirX * 0.05f, SHOULDER_Y + 0.2f, 0 }, { 0,0,0 }, { 0.2f, 0.05f, 0.2f }, cA_G, ShapeType::CUBE, status);
+            BuildPart(armT, 0, { sX + dirX * 0.05f, armY + 0.15f, 0 }, { 0,0,0 }, { 0.18f, 0.3f, 0.18f }, cA_F, ShapeType::CYLINDER, status);
+            BuildPart(armT, 0, { sX + dirX * 0.05f, armY - 0.25f, 0 }, { 0,0,0 }, { 0.22f, 0.5f, 0.22f }, cA_M, ShapeType::CUBE, status);
+            BuildPart(armT, 0, { sX + dirX * 0.05f, armY - 0.25f, -0.12f }, { 0,0,0 }, { 0.25f, 0.35f, 0.08f }, cA_S, ShapeType::CUBE, status);
+            BuildPart(armT, 0, { sX + dirX * 0.05f, armY - 0.55f, 0 }, { 0,0,0 }, { 0.15f, 0.15f, 0.15f }, cA_F, ShapeType::CUBE, status);
+        }
+        else if (modelID == 1) {
+            BuildPart(shoulderT, 1, { sX, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.5f, 0.5f, 0.5f }, cB_M, ShapeType::SPHERE, status);
+            BuildPart(shoulderT, 1, { sX, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.55f, 0.2f, 0.55f }, cB_F, ShapeType::TORUS, status);
+            BuildPart(shoulderT, 1, { sX + dirX * 0.4f, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.2f, 0.35f, 0.25f }, cB_S, ShapeType::CYLINDER, status);
+            BuildPart(armT, 1, { sX, armY, 0 }, { 0,0,0 }, { 0.35f, 0.65f, 0.35f }, cB_F, ShapeType::CYLINDER, status);
+            BuildPart(armT, 1, { sX, armY - 0.25f, 0.2f }, { 0,0,0 }, { 0.25f, 0.3f, 0.15f }, cB_S, ShapeType::CUBE, status);
+            BuildPart(armT, 1, { sX, armY + 0.2f, 0 }, { 0,0,0 }, { 0.4f, 0.15f, 0.4f }, cB_M, ShapeType::TORUS, status);
+            BuildPart(armT, 1, { sX, armY - 0.6f, 0 }, { 0,0,0 }, { 0.25f, 0.2f, 0.25f }, cB_M, ShapeType::CUBE, status);
+        }
+        else if (modelID == 2) {
+            BuildPart(shoulderT, 2, { sX - dirX * 0.1f, SHOULDER_Y, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.12f, 0.15f, 0.12f }, cC_F, ShapeType::CYLINDER, status);
+            BuildPart(shoulderT, 2, { sX + dirX * 0.05f, SHOULDER_Y, 0 }, { 0,0,dirX * -0.2f }, { 0.3f, 0.22f, 0.4f }, cC_M, ShapeType::WEDGE, status);
+            BuildPart(shoulderT, 2, { sX + dirX * 0.05f, SHOULDER_Y + 0.18f, -0.12f }, { 0.3f,0,0 }, { 0.08f, 0.35f, 0.18f }, cC_S, ShapeType::DOUBLE_PYRAMID, status);
+            BuildPart(armT, 2, { sX + dirX * 0.05f, armY, 0 }, { 0,0,0 }, { 0.18f, 0.65f, 0.18f }, cC_F, ShapeType::CYLINDER, status);
+            BuildPart(armT, 2, { sX + dirX * 0.05f, armY - 0.15f, -0.12f }, { 0,0,0 }, { 0.06f, 0.35f, 0.06f }, cC_S, ShapeType::CYLINDER, status);
+            BuildPart(armT, 2, { sX + dirX * 0.05f, armY - 0.15f, 0.12f }, { 0,0,0 }, { 0.06f, 0.35f, 0.06f }, cC_S, ShapeType::CYLINDER, status);
+            BuildPart(armT, 2, { sX + dirX * 0.05f, armY - 0.55f, 0 }, { 0,0,0 }, { 0.12f, 0.15f, 0.12f }, cC_M, ShapeType::SPHERE, status);
+        }
+        else if (modelID == 3) {
+            BuildPart(shoulderT, 3, { sX, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.35f, 0.35f, 0.35f }, cD_F, ShapeType::SPHERE, status);
+            BuildPart(shoulderT, 3, { sX + dirX * 0.18f, SHOULDER_Y + 0.15f, 0 }, { 0,0,0 }, { 0.55f, 0.5f, 0.55f }, cD_M, ShapeType::CUBE, status);
+            BuildPart(shoulderT, 3, { sX + dirX * 0.5f, SHOULDER_Y + 0.1f, 0 }, { 0,0,0 }, { 0.18f, 0.6f, 0.6f }, cD_S, ShapeType::CUBE, status);
+            BuildPart(shoulderT, 3, { sX + dirX * 0.18f, SHOULDER_Y + 0.4f, 0 }, { 0,0,0 }, { 0.3f, 0.1f, 0.3f }, cD_S, ShapeType::CUBE, status);
+            BuildPart(armT, 3, { sX + dirX * 0.18f, armY, 0 }, { 0,0,0 }, { 0.32f, 0.6f, 0.32f }, cD_F, ShapeType::HEXAGONAL_PRISM, status);
+            BuildPart(armT, 3, { sX + dirX * 0.18f, armY - 0.2f, 0.2f }, { 0,0,0 }, { 0.25f, 0.3f, 0.1f }, cD_M, ShapeType::CUBE, status);
+            BuildPart(armT, 3, { sX + dirX * 0.18f, armY - 0.55f, 0 }, { 0,0,0 }, { 0.2f, 0.2f, 0.2f }, cD_F, ShapeType::CUBE, status);
+        }
+        else if (modelID == 4) {
+            BuildPart(shoulderT, 4, { sX, SHOULDER_Y, 0 }, { 0,0,0 }, { 0.25f, 0.25f, 0.25f }, cE_F, ShapeType::SPHERE, status);
+            BuildPart(shoulderT, 4, { sX + dirX * 0.15f, SHOULDER_Y, 0.05f }, { 0,0,0 }, { 0.3f, 0.5f, 0.5f }, cE_S, ShapeType::DOUBLE_PYRAMID, status);
+            BuildPart(shoulderT, 4, { sX + dirX * 0.15f, SHOULDER_Y + 0.2f, 0.05f }, { 0,0,0 }, { 0.15f, 0.15f, 0.15f }, cE_G, ShapeType::SPHERE, status);
+            BuildPart(armT, 4, { sX + dirX * 0.15f, armY + 0.15f, 0 }, { 0,0,0 }, { 0.18f, 0.35f, 0.18f }, cE_M, ShapeType::CYLINDER, status);
+            BuildPart(armT, 4, { sX + dirX * 0.15f, armY - 0.25f, 0 }, { 0,0,0 }, { 0.22f, 0.45f, 0.22f }, cE_M, ShapeType::CYLINDER, status);
+            BuildPart(armT, 4, { sX + dirX * 0.15f, armY - 0.35f, 0.22f }, { -0.2f,0,0 }, { 0.08f, 0.7f, 0.25f }, cE_F, ShapeType::WEDGE, status);
+            BuildPart(armT, 4, { sX + dirX * 0.15f, armY - 0.55f, 0 }, { 0,0,0 }, { 0.15f, 0.2f, 0.15f }, cE_M, ShapeType::WEDGE, status);
+        }
+        };
+    BuildArm(PartType::ShoulderLeft, PartType::ArmLeft, cData.armLeftID, -1.0f, armLS);
+    BuildArm(PartType::ShoulderRight, PartType::ArmRight, cData.armRightID, 1.0f, armRS);
+
+    //脚部
+    auto BuildLeg = [&](PartType legT, int modelID, float dirX, PartStatus status) {
+        float hX = dirX * HIP_X;
+        float legY = HIP_Y - 0.55f;
+
+        if (modelID == 0) {
+            BuildPart(legT, 0, { hX - dirX * 0.05f, HIP_Y, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.18f, 0.25f, 0.18f }, cA_F, ShapeType::CYLINDER, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.25f, 0 }, { 0,0,0 }, { 0.32f, 0.45f, 0.32f }, cA_M, ShapeType::CUBE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.45f, 0.18f }, { 0,0,0 }, { 0.25f, 0.25f, 0.1f }, cA_S, ShapeType::WEDGE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.5f, 0.18f }, { 0.2f,0,0 }, { 0.15f, 0.15f, 0.12f }, cA_G, ShapeType::CUBE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.7f, 0 }, { 0,0,0 }, { 0.28f, 0.5f, 0.28f }, cA_M, ShapeType::CUBE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.7f, -0.15f }, { -0.1f,0,0 }, { 0.18f, 0.35f, 0.12f }, cA_F, ShapeType::WEDGE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.95f, 0.05f }, { 0,0,0 }, { 0.32f, 0.15f, 0.4f }, cA_S, ShapeType::CUBE, status);
+            BuildPart(legT, 0, { hX, HIP_Y - 0.95f, -0.18f }, { 0,0,0 }, { 0.28f, 0.15f, 0.25f }, cA_F, ShapeType::CUBE, status);
+        }
+        else if (modelID == 1) {
+            BuildPart(legT, 1, { hX, HIP_Y, 0 }, { 0,0,0 }, { 0.3f, 0.3f, 0.3f }, cB_F, ShapeType::SPHERE, status);
+            BuildPart(legT, 1, { hX, HIP_Y - 0.4f, 0 }, { 0,0,0 }, { 0.5f, 0.85f, 0.5f }, cB_M, ShapeType::HEXAGONAL_PRISM, status);
+            BuildPart(legT, 1, { hX + dirX * 0.3f, HIP_Y - 0.4f, 0 }, { 0,0,0 }, { 0.18f, 0.45f, 0.3f }, cB_S, ShapeType::CUBE, status);
+            BuildPart(legT, 1, { hX, HIP_Y - 0.3f, 0.3f }, { 0,0,0 }, { 0.3f, 0.3f, 0.15f }, cB_S, ShapeType::CUBE, status);
+            BuildPart(legT, 1, { hX, HIP_Y - 0.6f, -0.28f }, { 0,0,0 }, { 0.35f, 0.35f, 0.15f }, cB_F, ShapeType::CUBE, status);
+            BuildPart(legT, 1, { hX, HIP_Y - 0.9f, 0.12f }, { 0,0,0 }, { 0.55f, 0.25f, 0.6f }, cB_F, ShapeType::CUBE, status);
+            BuildPart(legT, 1, { hX, HIP_Y - 0.9f, -0.2f }, { 0,0,0 }, { 0.45f, 0.25f, 0.3f }, cB_M, ShapeType::CUBE, status);
+        }
+        else if (modelID == 2) {
+            BuildPart(legT, 2, { hX, HIP_Y, 0 }, { 0,0,DirectX::XM_PIDIV2 }, { 0.18f, 0.18f, 0.18f }, cC_F, ShapeType::CYLINDER, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.45f, 0.05f }, { -0.1f,0,0 }, { 0.22f, 0.9f, 0.22f }, cC_M, ShapeType::CYLINDER, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.35f, 0.22f }, { -0.2f,0,0 }, { 0.15f, 0.25f, 0.08f }, cC_S, ShapeType::WEDGE, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.6f, -0.18f }, { 0.2f,0,0 }, { 0.18f, 0.45f, 0.18f }, cC_S, ShapeType::DOUBLE_PYRAMID, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.45f, -0.2f }, { 0,0,0 }, { 0.08f, 0.15f, 0.08f }, cC_F, ShapeType::CYLINDER, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.95f, 0.15f }, { 0,0,0 }, { 0.22f, 0.15f, 0.45f }, cC_F, ShapeType::WEDGE, status);
+            BuildPart(legT, 2, { hX, HIP_Y - 0.95f, -0.1f }, { 0,0,0 }, { 0.15f, 0.15f, 0.15f }, cC_M, ShapeType::CUBE, status);
+        }
+        else if (modelID == 3) {
+            BuildPart(legT, 3, { hX, HIP_Y, 0 }, { 0,0,0 }, { 0.35f, 0.35f, 0.35f }, cD_F, ShapeType::SPHERE, status);
+            BuildPart(legT, 3, { hX, HIP_Y - 0.4f, 0 }, { 0,0,0 }, { 0.55f, 0.85f, 0.55f }, cD_M, ShapeType::CUBE, status);
+            BuildPart(legT, 3, { hX, HIP_Y - 0.4f, 0.32f }, { 0,0,0 }, { 0.35f, 0.55f, 0.15f }, cD_S, ShapeType::CUBE, status);
+            BuildPart(legT, 3, { hX - dirX * 0.32f, HIP_Y - 0.4f, 0 }, { 0,0,0 }, { 0.15f, 0.55f, 0.35f }, cD_S, ShapeType::CUBE, status);
+            BuildPart(legT, 3, { hX, HIP_Y - 0.85f, 0 }, { 0,0,0 }, { 0.65f, 0.3f, 0.65f }, cD_M, ShapeType::TRUNCATED_CONE, status);
+            BuildPart(legT, 3, { hX, HIP_Y - 0.9f, 0.35f }, { 0,0,0 }, { 0.25f, 0.15f, 0.15f }, cD_F, ShapeType::CUBE, status);
+        }
+        else if (modelID == 4) {
+            BuildPart(legT, 4, { hX, HIP_Y, 0 }, { 0,0,0 }, { 0.25f, 0.25f, 0.25f }, cE_F, ShapeType::SPHERE, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.4f, 0 }, { -0.1f,0,0 }, { 0.3f, 0.8f, 0.3f }, cE_M, ShapeType::CUBE, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.25f, 0.22f }, { -0.2f,0,0 }, { 0.12f, 0.35f, 0.18f }, cE_S, ShapeType::DOUBLE_PYRAMID, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.5f, 0.22f }, { -0.3f,0,0 }, { 0.1f, 0.5f, 0.25f }, cE_S, ShapeType::WEDGE, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.25f, -0.18f }, { 0.2f,0,0 }, { 0.15f, 0.25f, 0.15f }, cE_G, ShapeType::SPHERE, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.95f, 0.18f }, { 0,0,0 }, { 0.18f, 0.18f, 0.45f }, cE_F, ShapeType::DOUBLE_PYRAMID, status);
+            BuildPart(legT, 4, { hX, HIP_Y - 0.95f, -0.15f }, { 0,0,0 }, { 0.15f, 0.15f, 0.25f }, cE_M, ShapeType::WEDGE, status);
+        }
+        };
+    BuildLeg(PartType::LegLeft, cData.legID, -1.0f, legS);
+    BuildLeg(PartType::LegRight, cData.legID, 1.0f, legS);
+
+    //武器
+    auto BuildWeapon = [&](PartType handT, EntityID parentArmFrame, int weaponID, float dirX) {
+        EntityID weaponPivot = world->CreateEntity().Build();
+        DirectX::XMFLOAT3 pivotOffset = { 0.0f, -0.55f, 0.0f };
+        world->AddComponent<TransformComponent>(weaponPivot, TransformComponent{ .position = pivotOffset, .scale = {1.0f, 1.0f, 1.0f} });
+
+        DirectX::XMFLOAT3 holdRot = { 0.0f, 0.0f, 0.0f };
+        if (weaponID == 0 || weaponID == 1) holdRot = { 0.2f, dirX * -0.1f, 0.0f };
+        else if (weaponID == 2) holdRot = { 0.4f, dirX * -0.3f, 0.0f };
+
+        if (isEnemy) {
+            world->AddComponent<EnemyPartComponent>(weaponPivot, EnemyPartComponent{ .parentID = (int)parentArmFrame, .partType = handT, .partModelID = -1, .baseOffset = pivotOffset, .baseRotation = holdRot });
+        }
+        else {
+            PlayerPartComponent pivotPart;
+            pivotPart.parentID = (int)parentArmFrame; pivotPart.partType = handT; pivotPart.partModelID = -1; pivotPart.baseOffset = pivotOffset; pivotPart.baseRotation = holdRot;
+            world->AddComponent<PlayerPartComponent>(weaponPivot, pivotPart);
+        }
+
+        auto BuildWeaponPart = [&](DirectX::XMFLOAT3 localOffset, DirectX::XMFLOAT3 rot, DirectX::XMFLOAT3 scale, DirectX::XMFLOAT4 color, ShapeType shape) {
+            EntityID weaponPart = world->CreateEntity().Build();
+            world->AddComponent<TransformComponent>(weaponPart, TransformComponent{ .position = localOffset, .rotation = rot, .scale = scale });
+            world->AddComponent<MeshComponent>(weaponPart);
+            AttachMeshAndCollider(weaponPart, world, shape, color, ColliderType::Type_None, 0.0f, 0.0f, 0.0f);
+
+            if (isEnemy) {
+                world->AddComponent<EnemyPartComponent>(weaponPart, EnemyPartComponent{ .parentID = (int)weaponPivot, .partType = handT, .partModelID = weaponID, .baseOffset = localOffset, .baseRotation = rot });
+            }
+            else {
+                world->AddComponent<PlayerPartComponent>(weaponPart, PlayerPartComponent{ .parentID = (int)weaponPivot, .partType = handT, .partModelID = weaponID, .baseOffset = localOffset, .baseRotation = rot });
+            }
+            };
+
+        if (weaponID == 0) {
+            DirectX::XMFLOAT4 gunColor = { 0.25f, 0.25f, 0.25f, 1.0f }; DirectX::XMFLOAT4 darkColor = { 0.15f, 0.15f, 0.15f, 1.0f }; DirectX::XMFLOAT4 barrelColor = { 0.2f, 0.2f, 0.2f, 1.0f };
+            BuildWeaponPart({ 0.0f, -0.1f,  0.0f }, { 0.15f,0,0 }, { 0.04f, 0.15f, 0.06f }, darkColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.02f, 0.05f }, { 0,0,0 }, { 0.02f, 0.12f, 0.02f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.15f }, { 0,0,0 }, { 0.06f, 0.12f, 0.35f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.02f, 0.2f }, { 0,0,0 }, { 0.06f, 0.08f, 0.15f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f, -0.12f, 0.2f }, { -0.1f,0,0 }, { 0.05f, 0.2f,  0.1f }, darkColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f, -0.22f, 0.21f }, { -0.1f,0,0 }, { 0.06f, 0.04f, 0.11f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.45f }, { 0,0,0 }, { 0.06f, 0.1f,  0.25f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.6f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.5f) }, { 0.02f, 0.4f,  0.02f }, barrelColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.15f,  0.75f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.5f) }, { 0.03f, 0.08f, 0.03f }, darkColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.1f, -0.15f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.0f) }, { 0.03f, 0.25f, 0.03f }, barrelColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.05f,-0.3f }, { 0,0,0 }, { 0.04f, 0.15f, 0.08f }, gunColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.18f, 0.1f }, { 0,0,0 }, { 0.03f, 0.04f, 0.15f }, darkColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.22f, 0.1f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.0f) }, { 0.04f, 0.2f,  0.04f }, barrelColor, ShapeType::CYLINDER);
+        }
+        else if (weaponID == 1) {
+            DirectX::XMFLOAT4 gunColor = { 0.7f, 0.7f, 0.75f, 1.0f }; DirectX::XMFLOAT4 darkColor = { 0.3f, 0.3f, 0.35f, 1.0f }; DirectX::XMFLOAT4 energyColor = { 0.0f, 0.9f, 1.0f, 1.0f };
+            BuildWeaponPart({ 0.0f, -0.1f,  0.0f }, { 0.15f,0,0 }, { 0.04f, 0.15f, 0.06f }, darkColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f,  0.02f, 0.05f }, { -0.1f,0,0 }, { 0.03f, 0.08f, 0.03f }, gunColor, ShapeType::WEDGE);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.15f }, { 0,0,0 }, { 0.08f, 0.12f, 0.35f }, gunColor, ShapeType::HEXAGONAL_PRISM);
+            BuildWeaponPart({ 0.0f,  0.1f, -0.08f }, { 0,0,0 }, { 0.07f, 0.12f, 0.11f }, darkColor, ShapeType::CUBE);
+            BuildWeaponPart({ 0.0f, -0.05f, 0.15f }, { 0,0,0 }, { 0.06f, 0.15f, 0.08f }, darkColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f, -0.15f, 0.16f }, { 0,0,0 }, { 0.04f, 0.18f, 0.06f }, energyColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.475f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.5f) }, { 0.04f, 0.3f,  0.04f }, darkColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.425f }, { 0,0,0 }, { 0.07f, 0.07f, 0.2f }, gunColor, ShapeType::HEXAGONAL_PRISM);
+            BuildWeaponPart({ 0.0f,  0.1f,  0.55f }, { 0,30,30 }, { 0.07f, 0.04f, 0.07f }, gunColor, ShapeType::TORUS);
+            BuildWeaponPart({ 0.0f,  0.125f,  0.65f }, { 0,30,30 }, { 0.04f, 0.02f, 0.04f }, gunColor, ShapeType::TORUS);
+            BuildWeaponPart({ 0.0f,  0.18f, 0.15f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(78.5f) }, { 0.02f, 0.3f,  0.02f }, energyColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.22f, 0.0f }, { 0,0,0 }, { 0.04f, 0.06f, 0.15f }, darkColor, ShapeType::WEDGE);
+        }
+        else if (weaponID == 2) {
+            DirectX::XMFLOAT4 gripColor = { 0.4f, 0.4f, 0.4f, 1.0f }; DirectX::XMFLOAT4 beamColor = { 1.0f, 0.1f, 0.5f, 0.8f };
+            BuildWeaponPart({ 0.0f,  0.1f, 0.1f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(40.0f) }, { 0.03f, 0.2f, 0.03f }, gripColor, ShapeType::CYLINDER);
+            BuildWeaponPart({ 0.0f,  0.1f, 0.1f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(40.0f) }, { 0.04f, 0.06f, 0.04f }, gripColor, ShapeType::TORUS);
+            BuildWeaponPart({ 0.0f,  0.55f, 0.5f }, { DirectX::XMConvertToRadians(0.0f),DirectX::XMConvertToRadians(90.0f),DirectX::XMConvertToRadians(40.0f) }, { 0.04f, 1.1f, 0.04f }, beamColor, ShapeType::CYLINDER);
+        }
+        };
+
+    BuildWeapon(PartType::HandLeft, frameArmL, cData.weaponLeftID, -1.0f);
+    BuildWeapon(PartType::HandRight, frameArmR, cData.weaponRightID, 1.0f);
+
+    return playerCore;
+}
 }

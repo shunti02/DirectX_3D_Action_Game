@@ -1,7 +1,3 @@
-/*===================================================================
-// ファイル: EnemySystem.cpp
-// 概要: 敵のAI（追跡・攻撃・クールダウン）を制御するシステム
-=====================================================================*/
 #define NOMINMAX
 #include "ECS/Systems/EnemySystem.h"
 #include "ECS/World.h"
@@ -10,6 +6,8 @@
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/StatusComponent.h"
 #include "ECS/Components/PhysicsComponent.h"
+#include "ECS/Components/BulletComponent.h" 
+#include "Engine/AnimationManager.h"
 #include "Game/EntityFactory.h"
 #include "App/Main.h"
 #include <DirectXMath.h>
@@ -33,6 +31,7 @@ void EnemySystem::Update(float dt) {
     for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
         if (!registry->HasComponent<EnemyComponent>(id)) continue;
         if (!registry->HasComponent<TransformComponent>(id)) continue;
+        if (!registry->HasComponent<PhysicsComponent>(id)) continue;
 
         if (registry->HasComponent<StatusComponent>(id)) {
             if (registry->GetComponent<StatusComponent>(id).hp <= 0) continue;
@@ -40,28 +39,28 @@ void EnemySystem::Update(float dt) {
 
         auto& enemy = registry->GetComponent<EnemyComponent>(id);
         auto& trans = registry->GetComponent<TransformComponent>(id);
+        auto& phy = registry->GetComponent<PhysicsComponent>(id);
 
-        // 0. ノックバック・スタン
         if (enemy.knockbackTimer > 0.0f) {
             enemy.knockbackTimer -= dt;
             enemy.state = EnemyState::Stun;
-            if (registry->HasComponent<PhysicsComponent>(id)) {
-                auto& phy = registry->GetComponent<PhysicsComponent>(id);
-                if (std::abs(phy.velocity.y) < 0.1f) {
-                    phy.velocity.x *= 0.9f;
-                    phy.velocity.z *= 0.9f;
-                }
+            if (std::abs(phy.velocity.y) < 0.1f) {
+                phy.velocity.x *= 0.8f;
+                phy.velocity.z *= 0.8f;
             }
             continue;
         }
         else if (enemy.state == EnemyState::Stun) {
-            enemy.state = (enemy.type == EnemyType::Boss) ? EnemyState::BossIdle : EnemyState::Chase;
+            enemy.state = EnemyState::Chase;
         }
 
-        // 1. ターゲット検索
         EntityID targetID = ECSConfig::INVALID_ID;
         float minDistSq = std::numeric_limits<float>::max();
         XMVECTOR enemyPos = XMLoadFloat3(&trans.position);
+
+        XMVECTOR targetPosVec = enemyPos;
+        XMVECTOR targetVelVec = XMVectorZero();
+        XMFLOAT3 targetPosF = trans.position;
 
         for (EntityID pID = 0; pID < ECSConfig::MAX_ENTITIES; ++pID) {
             if (!registry->HasComponent<PlayerComponent>(pID)) continue;
@@ -74,264 +73,128 @@ void EnemySystem::Update(float dt) {
                 if (d < minDistSq) {
                     minDistSq = d;
                     targetID = pID;
+                    targetPosVec = XMLoadFloat3(&pTrans.position);
+                    targetPosF = pTrans.position;
+                    if (registry->HasComponent<PhysicsComponent>(pID)) {
+                        targetVelVec = XMLoadFloat3(&registry->GetComponent<PhysicsComponent>(pID).velocity);
+                    }
                 }
             }
         }
 
-        if (targetID == ECSConfig::INVALID_ID && enemy.type != EnemyType::Boss) return;
+        if (targetID == ECSConfig::INVALID_ID) continue;
+        float distToTarget = std::sqrt(minDistSq);
 
-        // ★変数名を統一 (distToTarget, targetPosVec)
-        float distToTarget = 0.0f;
-        XMVECTOR targetPosVec = enemyPos; // いない場合は自分の位置
-        XMFLOAT3 targetPosF = trans.position;
+        bool isDodging = false;
+        if (enemy.type != EnemyType::Heavy && enemy.thinkInterval <= 0.0f && enemy.state != EnemyState::Attack) {
+            for (EntityID bID = 0; bID < ECSConfig::MAX_ENTITIES; ++bID) {
+                if (!registry->HasComponent<BulletComponent>(bID)) continue;
+                auto& bullet = registry->GetComponent<BulletComponent>(bID);
+                if (!bullet.isActive || !bullet.fromPlayer) continue;
 
-        if (targetID != ECSConfig::INVALID_ID) {
-            auto& targetTrans = registry->GetComponent<TransformComponent>(targetID);
-            targetPosVec = XMLoadFloat3(&targetTrans.position);
-            targetPosF = targetTrans.position;
-            distToTarget = std::sqrt(minDistSq);
+                auto& bTrans = registry->GetComponent<TransformComponent>(bID);
+                auto& bPhy = registry->GetComponent<PhysicsComponent>(bID);
+                XMVECTOR bPos = XMLoadFloat3(&bTrans.position);
+                XMVECTOR bVel = XMLoadFloat3(&bPhy.velocity);
+
+                XMVECTOR toEnemy = enemyPos - bPos;
+                float bDist = XMVectorGetX(XMVector3Length(toEnemy));
+
+                if (bDist < 15.0f && XMVectorGetX(XMVector3LengthSq(bVel)) > 1.0f) {
+                    XMVECTOR bDir = XMVector3Normalize(bVel);
+                    XMVECTOR toEnemyDir = XMVector3Normalize(toEnemy);
+                    if (XMVectorGetX(XMVector3Dot(bDir, toEnemyDir)) > 0.95f) {
+                        enemy.state = EnemyState::Strafing;
+                        enemy.strafeDirection = (rand() % 2 == 0) ? 1.0f : -1.0f;
+                        enemy.stateTimer = 0.4f;
+                        enemy.thinkInterval = 1.0f;
+                        isDodging = true;
+                        break;
+                    }
+                }
+            }
         }
 
-        // ---------------------------------------------------------
-        // ★ボス専用AI
-        // ---------------------------------------------------------
-        if (enemy.type == EnemyType::Boss) {
-            enemy.attackCooldownTimer -= dt;
-
-            if (registry->HasComponent<StatusComponent>(id)) {
-                auto& st = registry->GetComponent<StatusComponent>(id);
-                if (st.hp < st.maxHp / 2) enemy.bossPhase = 2;
-            }
-
-            if (enemy.state != EnemyState::BossIdle &&
-                enemy.state != EnemyState::BossRingBarrage &&
-                enemy.state != EnemyState::BossBitLaser &&
-                enemy.state != EnemyState::BossRapidFire)
-            {
-                enemy.state = EnemyState::BossIdle;
-            }
-
-            if (enemy.state == EnemyState::BossIdle) {
-                if (enemy.attackCooldownTimer <= 0.0f) {
-                    int pattern = rand() % 100;
-                    if (enemy.bossPhase == 1) {
-                        if (pattern < 60) {
-                            enemy.state = EnemyState::BossRingBarrage;
-                            enemy.attackTimer = 3.0f;
-                        }
-                        else {
-                            enemy.state = EnemyState::BossRapidFire;
-                            enemy.attackTimer = 2.0f;
-                        }
-                    }
-                    else {
-                        if (pattern < 30) {
-                            enemy.state = EnemyState::BossRingBarrage;
-                            enemy.attackTimer = 3.0f;
-                        }
-                        else if (pattern < 60) {
-                            enemy.state = EnemyState::BossRapidFire;
-                            enemy.attackTimer = 1.5f;
-                        }
-                        else {
-                            enemy.state = EnemyState::BossBitLaser;
-                            enemy.attackTimer = 2.0f;
-                        }
-                    }
-                    enemy.stateTimer = 0.0f;
-                }
-            }
-            else if (enemy.state == EnemyState::BossRingBarrage) {
-                enemy.attackTimer -= dt;
-                trans.rotation.y += dt * 2.0f;
-                enemy.stateTimer += dt;
-
-                if (enemy.stateTimer > 0.1f) {
-                    enemy.stateTimer = 0.0f;
-                    XMFLOAT3 spawnPos = trans.position;
-                    spawnPos.y += 1.0f;
-
-                    float dirY = 0.0f;
-                    if (targetID != ECSConfig::INVALID_ID) {
-                        float targetY = targetPosF.y + 0.5f;
-                        float dy = targetY - spawnPos.y;
-                        // std::max のエラー回避: (std::max)(...)
-                        float hDist = (std::max)(distToTarget, 0.1f);
-                        dirY = dy / hDist;
-                    }
-                    else {
-                        dirY = -0.2f;
-                    }
-
-                    for (int i = 0; i < 4; ++i) {
-                        float angle = trans.rotation.y + (XM_PIDIV2 * i);
-                        XMVECTOR vDir = XMVectorSet(sinf(angle), dirY, cosf(angle), 0.0f);
-                        vDir = XMVector3Normalize(vDir);
-                        XMFLOAT3 dir;
-                        XMStoreFloat3(&dir, vDir);
-                        EntityFactory::CreateEnemyBullet(pWorld, spawnPos, dir, 20);
-                    }
-                }
-                if (enemy.attackTimer <= 0.0f) {
-                    enemy.state = EnemyState::BossIdle;
-                    enemy.attackCooldownTimer = (enemy.bossPhase == 2) ? 2.0f : 4.0f;
-                }
-            }
-            else if (enemy.state == EnemyState::BossRapidFire) {
-                enemy.attackTimer -= dt;
-                enemy.stateTimer += dt;
-
-                if (targetID != ECSConfig::INVALID_ID) {
-                    XMVECTOR dir = XMVector3Normalize(targetPosVec - enemyPos);
-                    float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
-                    float diff = angle - trans.rotation.y;
-                    while (diff > XM_PI) diff -= XM_2PI;
-                    while (diff < -XM_PI) diff += XM_2PI;
-                    trans.rotation.y += diff * 5.0f * dt;
-                }
-
-                float interval = (enemy.bossPhase == 2) ? 0.3f : 0.5f;
-                if (enemy.stateTimer > interval) {
-                    enemy.stateTimer = 0.0f;
-                    if (targetID != ECSConfig::INVALID_ID) {
-                        XMVECTOR pCore = XMLoadFloat3(&targetPosF);
-                        pCore = XMVectorAdd(pCore, XMVectorSet(0, 0.5f, 0, 0));
-                        XMFLOAT3 spawnPos = trans.position;
-                        spawnPos.y += 1.0f;
-                        XMVECTOR start = XMLoadFloat3(&spawnPos);
-                        XMVECTOR dirV = XMVector3Normalize(pCore - start);
-                        XMFLOAT3 dir;
-                        XMStoreFloat3(&dir, dirV);
-                        EntityFactory::CreateEnemyBullet(pWorld, spawnPos, dir, 30);
-                    }
-                }
-                if (enemy.attackTimer <= 0.0f) {
-                    enemy.state = EnemyState::BossIdle;
-                    enemy.attackCooldownTimer = 3.0f;
-                }
-            }
-            else if (enemy.state == EnemyState::BossBitLaser) {
-                enemy.attackTimer -= dt;
-                enemy.stateTimer += dt;
-
-                if (enemy.stateTimer > 0.2f && targetID != ECSConfig::INVALID_ID) {
-                    enemy.stateTimer = 0.0f;
-                    XMVECTOR pCore = XMLoadFloat3(&targetPosF);
-                    pCore = XMVectorAdd(pCore, XMVectorSet(0, 0.5f, 0, 0));
-                    for (int i = 0; i < 4; ++i) {
-                        float angle = (XM_2PI / 4.0f) * i + (timeAccumulator * 2.0f);
-                        float r = 5.0f;
-                        XMFLOAT3 bitPos = trans.position;
-                        bitPos.x += cosf(angle) * r;
-                        bitPos.z += sinf(angle) * r;
-                        bitPos.y += 2.0f;
-                        XMVECTOR start = XMLoadFloat3(&bitPos);
-                        XMVECTOR dirV = XMVector3Normalize(pCore - start);
-                        XMFLOAT3 dir;
-                        XMStoreFloat3(&dir, dirV);
-                        EntityFactory::CreateEnemyBullet(pWorld, bitPos, dir, 15);
-                    }
-                }
-                if (enemy.attackTimer <= 0.0f) {
-                    enemy.state = EnemyState::BossIdle;
-                    enemy.attackCooldownTimer = 3.0f;
-                }
-            }
-            continue;
-        }
-
-        // ---------------------------------------------------------
-        // 2. 雑魚敵の思考
-        // ---------------------------------------------------------
         enemy.thinkInterval -= dt;
-        if (enemy.thinkInterval <= 0.0f && enemy.state != EnemyState::Attack && enemy.state != EnemyState::Cooldown) {
-            enemy.thinkInterval = 0.5f + (rand() % 50) / 100.0f;
+        if (!isDodging && enemy.thinkInterval <= 0.0f && enemy.state != EnemyState::Attack && enemy.state != EnemyState::Cooldown) {
+            enemy.thinkInterval = 0.2f + (rand() % 20) / 100.0f;
 
-            if (enemy.isImmovable) {
+            if (enemy.type == EnemyType::Heavy) {
                 enemy.state = EnemyState::Chase;
             }
-            else if (enemy.isRanged) {
-                if (distToTarget < 8.0f) enemy.state = EnemyState::Retreat;
-                else if (distToTarget > enemy.optimalRange + 5.0f) enemy.state = EnemyState::Chase;
+            else if (enemy.type == EnemyType::Ranged) {
+                if (distToTarget < enemy.optimalRange * 0.8f) enemy.state = EnemyState::Retreat;
+                else if (distToTarget > enemy.optimalRange * 2.0f) enemy.state = EnemyState::Chase;
                 else {
-                    if (rand() % 100 < 40) {
-                        enemy.state = EnemyState::Strafing;
-                        enemy.strafeDirection = (rand() % 2 == 0) ? 1.0f : -1.0f;
-                        enemy.stateTimer = 1.0f;
-                    }
-                    else {
-                        enemy.state = EnemyState::Chase;
-                    }
+                    enemy.state = EnemyState::Strafing;
+                    enemy.strafeDirection = (rand() % 2 == 0) ? 1.0f : -1.0f;
+                    enemy.stateTimer = 0.8f + (rand() % 10) / 10.0f;
                 }
             }
-            else {
-                if (distToTarget < 10.0f && distToTarget > enemy.attackRange) {
-                    if (rand() % 100 < 30) {
-                        enemy.state = EnemyState::Strafing;
-                        enemy.strafeDirection = (rand() % 2 == 0) ? 1.0f : -1.0f;
-                        enemy.stateTimer = 0.8f;
-                    }
-                    else {
-                        enemy.state = EnemyState::Chase;
-                    }
-                }
-                else {
-                    enemy.state = EnemyState::Chase;
-                }
+            else if (enemy.type == EnemyType::Normal) {
+                enemy.state = EnemyState::Chase;
             }
         }
 
-        // ---------------------------------------------------------
-        // 3. 雑魚敵の遠距離攻撃
-        // ---------------------------------------------------------
-        if (enemy.isRanged) {
+        //遠距離攻撃
+        if ((enemy.type == EnemyType::Ranged || enemy.type == EnemyType::Heavy)) {
             if (enemy.attackCooldownTimer > 0.0f) enemy.attackCooldownTimer -= dt;
 
-            if (distToTarget < 30.0f && enemy.attackCooldownTimer <= 0.0f) {
+            float shootRange = (enemy.type == EnemyType::Ranged) ? 40.0f : 50.0f;
+
+            if (enemy.state != EnemyState::Attack && enemy.state != EnemyState::Cooldown && distToTarget < shootRange && enemy.attackCooldownTimer <= 0.0f) {
+                enemy.state = EnemyState::Attack;
+
+                float duration = AnimationManager::GetInstance()->GetDuration("ShootRight");
+                if (duration <= 0.0f) duration = 0.5f;
+                enemy.attackDuration = duration;
+                enemy.attackTimer = duration;
+
+                enemy.attackCooldownTimer = 1.0f + (rand() % 6) / 10.0f;
+
                 XMFLOAT3 spawnPos = trans.position;
-                spawnPos.y += 1.0f;
-                XMFLOAT3 targetCorePos = targetPosF;
-                targetCorePos.y += 0.5f;
+                spawnPos.y += (enemy.type == EnemyType::Heavy) ? 0.8f : 1.0f;
+
+                float bulletSpeed = 25.0f;
+                float timeToHit = distToTarget / bulletSpeed;
+                XMVECTOR predictedPos = targetPosVec + (targetVelVec * timeToHit * 0.85f);
+                predictedPos = XMVectorSetY(predictedPos, XMVectorGetY(targetPosVec) + 1.0f);
 
                 XMVECTOR startV = XMLoadFloat3(&spawnPos);
-                XMVECTOR endV = XMLoadFloat3(&targetCorePos);
-                XMVECTOR dirV = XMVector3Normalize(endV - startV);
-                XMFLOAT3 dir;
-                XMStoreFloat3(&dir, dirV);
+                XMVECTOR dirV = XMVector3Normalize(predictedPos - startV);
+                XMFLOAT3 dir; XMStoreFloat3(&dir, dirV);
 
-                int dmg = 10;
-                if (registry->HasComponent<StatusComponent>(id)) {
-                    dmg = registry->GetComponent<StatusComponent>(id).attackPower;
-                }
+                int dmg = registry->HasComponent<StatusComponent>(id) ? registry->GetComponent<StatusComponent>(id).attackPower : 15;
                 EntityFactory::CreateEnemyBullet(pWorld, spawnPos, dir, dmg);
-                enemy.attackCooldownTimer = enemy.attackInterval;
+                if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_SWITCH");
             }
         }
 
-        // ---------------------------------------------------------
-        // 4. 雑魚敵の行動実行
-        // ---------------------------------------------------------
         XMVECTOR moveDir = XMVectorZero();
-        float currentMoveSpeed = enemy.moveSpeed;
+        float currentMoveSpeed = 0.0f;
 
         switch (enemy.state) {
         case EnemyState::Chase:
-            if (enemy.isImmovable) {
-                XMVECTOR dir = XMVector3Normalize(targetPosVec - enemyPos);
-                float angle = atan2f(XMVectorGetX(dir), XMVectorGetZ(dir));
-                trans.rotation.y = angle;
-                break;
-            }
-            if (!enemy.isRanged && distToTarget <= enemy.attackRange) {
+            if (enemy.type == EnemyType::Heavy) break;
+
+            if (enemy.type == EnemyType::Normal && distToTarget <= enemy.attackRange) {
                 enemy.state = EnemyState::Attack;
-                enemy.attackTimer = enemy.attackDuration;
-                int dmg = 10;
-                if (registry->HasComponent<StatusComponent>(id)) dmg = registry->GetComponent<StatusComponent>(id).attackPower;
-                EntityFactory::CreateAttackSphere(pWorld, id, trans.position, dmg);
+
+                float duration = AnimationManager::GetInstance()->GetDuration("AttackRight");
+                if (duration <= 0.0f) duration = 1.0f;
+                enemy.attackDuration = duration;
+                enemy.attackTimer = duration;
+
+                XMVECTOR atkPosV = enemyPos + XMVector3Normalize(targetPosVec - enemyPos) * 1.5f;
+                atkPosV = XMVectorSetY(atkPosV, XMVectorGetY(atkPosV) + 1.0f);
+                XMFLOAT3 atkPos; XMStoreFloat3(&atkPos, atkPosV);
+
+                int dmg = registry->HasComponent<StatusComponent>(id) ? registry->GetComponent<StatusComponent>(id).attackPower : 20;
+                EntityFactory::CreateAttackSphere(pWorld, id, atkPos, dmg);
             }
             else {
                 moveDir = XMVector3Normalize(targetPosVec - enemyPos);
-                if (enemy.isRanged && distToTarget < enemy.optimalRange && distToTarget > 8.0f) currentMoveSpeed = 0.0f;
+                currentMoveSpeed = enemy.moveSpeed * 1.5f;
             }
             break;
 
@@ -342,14 +205,14 @@ void EnemySystem::Update(float dt) {
                 XMVECTOR toTarget = XMVector3Normalize(targetPosVec - enemyPos);
                 XMMATRIX rotMat = XMMatrixRotationY(XM_PIDIV2 * enemy.strafeDirection);
                 moveDir = XMVector3TransformNormal(toTarget, rotMat);
-                if (!enemy.isRanged) moveDir = XMVectorAdd(moveDir, toTarget * 0.3f);
-                moveDir = XMVector3Normalize(moveDir);
+                currentMoveSpeed = (enemy.stateTimer <= 0.4f) ? enemy.moveSpeed * 3.0f : enemy.moveSpeed * 1.2f;
             }
             break;
 
         case EnemyState::Retreat:
-            if (distToTarget > 12.0f) enemy.state = EnemyState::Chase;
+            if (distToTarget > enemy.optimalRange) enemy.state = EnemyState::Chase;
             moveDir = XMVector3Normalize(enemyPos - targetPosVec);
+            currentMoveSpeed = enemy.moveSpeed * 1.5f;
             break;
 
         case EnemyState::Attack:
@@ -364,37 +227,52 @@ void EnemySystem::Update(float dt) {
         case EnemyState::Cooldown:
             currentMoveSpeed = 0.0f;
             enemy.attackTimer -= dt;
-            if (enemy.attackTimer <= 0.0f) enemy.state = EnemyState::Chase;
+            if (enemy.attackTimer <= 0.0f) {
+                enemy.state = EnemyState::Chase;
+            }
             break;
         }
 
-        if (XMVectorGetX(XMVector3LengthSq(moveDir)) > 0.001f && currentMoveSpeed > 0.0f) {
-            float angle = atan2f(XMVectorGetX(moveDir), XMVectorGetZ(moveDir));
-            trans.rotation.y = angle;
+        //物理速度の適用
+        if (enemy.type != EnemyType::Heavy) {
+            float targetVx = XMVectorGetX(moveDir) * currentMoveSpeed;
+            float targetVz = XMVectorGetZ(moveDir) * currentMoveSpeed;
+
+            float accel = (currentMoveSpeed > 0.0f) ? 30.0f : 40.0f;
 
             XMVECTOR separation = XMVectorZero();
-            int neighborCount = 0;
             for (EntityID otherID = 0; otherID < ECSConfig::MAX_ENTITIES; ++otherID) {
                 if (id == otherID) continue;
                 if (!registry->HasComponent<EnemyComponent>(otherID)) continue;
-                if (registry->HasComponent<StatusComponent>(otherID) && registry->GetComponent<StatusComponent>(otherID).hp <= 0) continue;
-
                 auto& otherTrans = registry->GetComponent<TransformComponent>(otherID);
                 float dSq = DistSq(trans.position, otherTrans.position);
-                if (dSq < 4.0f) {
+                if (dSq < 6.0f && dSq > 0.001f) {
                     XMVECTOR away = enemyPos - XMLoadFloat3(&otherTrans.position);
-                    separation = XMVectorAdd(separation, XMVector3Normalize(away) / (dSq + 0.1f));
-                    neighborCount++;
+                    separation = XMVectorAdd(separation, XMVector3Normalize(away) / dSq);
                 }
             }
-            if (neighborCount > 0) {
-                moveDir = XMVectorAdd(moveDir, separation * 1.5f);
-                moveDir = XMVector3Normalize(moveDir);
+            if (currentMoveSpeed > 0.0f) {
+                XMVECTOR sepVel = XMVector3Normalize(separation) * currentMoveSpeed * 0.8f;
+                targetVx += XMVectorGetX(sepVel);
+                targetVz += XMVectorGetZ(sepVel);
             }
 
-            XMVECTOR velocity = moveDir * currentMoveSpeed * dt;
-            trans.position.x += XMVectorGetX(velocity);
-            trans.position.z += XMVectorGetZ(velocity);
+            phy.velocity.x += (targetVx - phy.velocity.x) * (accel * dt);
+            phy.velocity.z += (targetVz - phy.velocity.z) * (accel * dt);
         }
+
+        float targetYaw = trans.rotation.y;
+        if (enemy.type == EnemyType::Normal && currentMoveSpeed > 0.1f && enemy.state != EnemyState::Attack) {
+            targetYaw = atan2f(phy.velocity.x, phy.velocity.z);
+        }
+        else {
+            XMVECTOR dirToTarget = XMVector3Normalize(targetPosVec - enemyPos);
+            targetYaw = atan2f(XMVectorGetX(dirToTarget), XMVectorGetZ(dirToTarget));
+        }
+
+        float diff = targetYaw - trans.rotation.y;
+        while (diff > XM_PI) diff -= XM_2PI;
+        while (diff < -XM_PI) diff += XM_2PI;
+        trans.rotation.y += diff * 20.0f * dt;
     }
 }

@@ -5,7 +5,7 @@ class PlayerAnimationSystem : public System {
 public:
     PlayerAnimationSystem(){}
     void Update(float dt) override;
-    void Draw() override {} // 描画はRenderSystemに任せる
+    void Draw() override {}
 private:
-    float timeAccumulator = 0.0f; // アニメーション用タイマー
+    float timeAccumulator = 0.0f;
 };

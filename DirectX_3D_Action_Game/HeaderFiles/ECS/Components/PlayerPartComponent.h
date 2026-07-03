@@ -6,6 +6,7 @@ enum class PartType {
 	EarLeft,
 	EarRight,
     Body,
+	Waist,
 	ShoulderLeft,
 	ShoulderRight,
     ArmLeft,
@@ -16,13 +17,21 @@ enum class PartType {
     LegRight
 };
 
-struct PlayerPartComponent {
-    int parentID = -1;      // 本体のEntityID
-    PartType partType;      // 部位の種類
+struct PartStatus {
+    float hp = 0.0f;
+    float attack = 0.0f;
+    float defense = 0.0f;
+    float speed = 0.0f;
+    float weight = 0.0f;
+};
 
-    // 基準となるオフセット位置（本体からどれくらい離れているか）
+struct PlayerPartComponent {
+    int parentID = -1;
+    PartType partType;
+    int partModelID = 0;
     DirectX::XMFLOAT3 baseOffset = { 0.0f, 0.0f, 0.0f };
 
-    // 基準となる回転（初期ポーズ）
     DirectX::XMFLOAT3 baseRotation = { 0.0f, 0.0f, 0.0f };
+
+    PartStatus status;
 };

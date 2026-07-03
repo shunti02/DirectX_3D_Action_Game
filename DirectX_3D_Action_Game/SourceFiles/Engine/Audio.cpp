@@ -1,7 +1,3 @@
-/*===================================================================
-// ファイル: Audio.cpp
-// 概要: Audioクラスの実装 (DirectXTK版)
-=====================================================================*/
 #include "Engine/Audio.h"
 #include <Windows.h>
 
@@ -13,14 +9,11 @@ Audio::~Audio(){
 }
 
 bool Audio::Initialize() {
-	//
 	HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 	if (FAILED(hr)) {
-		//
 		if (hr != RPC_E_CHANGED_MODE)return false;
 	}
 
-	// オーディオエンジン作成
 	AUDIO_ENGINE_FLAGS eflags = AudioEngine_Default;
 #ifdef _DEBUG
 	eflags |= AudioEngine_Debug;
@@ -58,23 +51,38 @@ bool Audio::LoadSound(const std::string& key, const std::wstring& filename) {
 }
 void Audio::Play(const std::string& key, bool loop, float volume) {
 	if (soundEffects.find(key) == soundEffects.end()) return;
+
 	//ワンショット再生
 	if (!loop) {
-		soundEffects[key]->Play(volume, 0.0f, 0.0f);//音量、ピッチ、パン
+		soundEffects[key]->Play(volume, 0.0f, 0.0f);
 	}
 	//ループ再生
 	else {
+		if (loopInstances.find(key) != loopInstances.end()) {
+			loopInstances[key]->Stop();
+		}
+
 		auto instance = soundEffects[key]->CreateInstance();
 		instance->SetVolume(volume);
 		instance->Play(true);
-		loopInstances.push_back(std::move(instance));
+
+		loopInstances[key] = std::move(instance);
+	}
+}
+
+void Audio::Stop(const std::string& key) {
+	auto it = loopInstances.find(key);
+	if (it != loopInstances.end()) {
+		it->second->Stop();
+		loopInstances.erase(it);
 	}
 }
 
 void Audio::StopAll() {
-	//ループ再生中の音を停止
-	for (auto& instance : loopInstances) {
-		instance->Stop();
+	for (auto& pair : loopInstances) {
+		if (pair.second) {
+			pair.second->Stop();
+		}
 	}
 	loopInstances.clear();
 }

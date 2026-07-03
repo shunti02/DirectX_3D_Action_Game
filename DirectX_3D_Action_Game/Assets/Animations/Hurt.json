@@ -1,0 +1,51 @@
+{
+  "name": "Hurt",
+  "duration": 1.0,
+  "tracks": [
+    {
+      "part": "Waist",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.2, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Body",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.3, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Head",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.3, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.4, 0.0, 0.2 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.4, 0.0, -0.2 ]
+        }
+      ]
+    }
+  ]
+}

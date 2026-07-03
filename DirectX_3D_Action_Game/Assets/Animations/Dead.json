@@ -1,0 +1,87 @@
+{
+  "name": "Dead",
+  "duration": 1.0,
+  "tracks": [
+    {
+      "part": "Waist",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.8, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Body",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.4, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Head",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.5, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.5, 0.0, 0.5 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.5, 0.0, -0.5 ]
+        }
+      ]
+    },
+    {
+      "part": "ArmRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.2, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "ArmLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.2, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "LegRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -1.5, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "LegLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -1.5, 0.0, 0.0 ]
+        }
+      ]
+    }
+  ]
+}

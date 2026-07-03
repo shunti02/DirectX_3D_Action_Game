@@ -6,16 +6,17 @@
 
 StageSelectScene::StageSelectScene(SceneManager* manager) : BaseScene(manager) {}
 
-// ★演出用変数
 static float ss_blinkTimer = 0.0f;
 
 void StageSelectScene::Initialize() {
     pSkyBox = std::make_unique<SkyBox>();
     pSkyBox->Initialize(Game::GetInstance()->GetGraphics());
 
-    // カーソル初期位置は最新のステージに
     m_selectIndex = Game::GetInstance()->GetMaxUnlockedStage() - 1;
     AppLog::AddLog("--- Stage Select ---");
+    if (auto audio = Game::GetInstance()->GetAudio()) {
+        audio->Play("BGM_SELECT", true, 0.4f);
+    }
 }
 
 void StageSelectScene::Update(float dt) {
@@ -24,7 +25,6 @@ void StageSelectScene::Update(float dt) {
     int maxUnlock = Game::GetInstance()->GetMaxUnlockedStage();
     bool decided = false;
 
-    // --- マウス操作 ---
     DirectX::XMFLOAT2 mousePos = input->GetMousePosition();
     float mx = mousePos.x;
     float my = mousePos.y;
@@ -35,7 +35,6 @@ void StageSelectScene::Update(float dt) {
     prevMx = mx;
     prevMy = my;
 
-    // ★修正: Draw関数と合わせたボタン配置
     float startX = 150.0f;
     float startY = 200.0f;
     float btnW = 600.0f;
@@ -45,8 +44,7 @@ void StageSelectScene::Update(float dt) {
     int hoverIndex = -1;
     bool isHover = false;
 
-    for (int i = 0; i < 5; ++i) {
-        // ロックされているステージは判定しない
+    for (int i = 0; i < 3; ++i) {
         if (i >= maxUnlock) continue;
 
         float itemY = startY + (i * gapY);
@@ -70,7 +68,6 @@ void StageSelectScene::Update(float dt) {
         }
     }
 
-    // --- キーボード操作 ---
     if (!decided) {
         if (input->IsKeyDown('W') || input->IsKeyDown(VK_UP)) {
             m_selectIndex--;
@@ -87,16 +84,14 @@ void StageSelectScene::Update(float dt) {
         }
     }
 
-    // --- 決定 ---
     if (decided) {
-        // ... (既存の処理: そのまま) ...
         if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_JUMP");
         Game::GetInstance()->SetCurrentStage(m_selectIndex + 1);
         Game::GetInstance()->SetCurrentPhase(1);
         Game::GetInstance()->SetSavedHP(-1);
         Game::GetInstance()->GetSceneManager()->ChangeScene<GameScene>();
     }
-    // ... (キャンセル処理: そのまま) ...
+
     if (input->IsKeyDown(VK_BACK) || input->IsKeyDown(VK_ESCAPE)) {
         if (auto audio = Game::GetInstance()->GetAudio()) audio->Play("SE_CANCEL");
         Game::GetInstance()->GetSceneManager()->ChangeScene<TitleScene>();
@@ -106,9 +101,7 @@ void StageSelectScene::Update(float dt) {
 void StageSelectScene::Draw() {
     Graphics* g = Game::GetInstance()->GetGraphics();
 
-    // 背景
     if (pSkyBox) {
-        // 少し回転させるなどしても良い
         XMMATRIX view = XMMatrixLookAtLH(XMVectorSet(0, 0, -5, 0), XMVectorSet(0, 0, 0, 0), XMVectorSet(0, 1, 0, 0));
         XMMATRIX proj = XMMatrixPerspectiveFovLH(XMConvertToRadians(45), 1280.0f / 720.0f, 0.1f, 1000.0f);
         pSkyBox->Draw(g, view, proj);
@@ -118,20 +111,17 @@ void StageSelectScene::Draw() {
     float scW = (float)Config::SCREEN_WIDTH;
     float scH = (float)Config::SCREEN_HEIGHT;
 
-    // ★スキャンライン
     for (float y = 0; y < scH; y += 4.0f) {
         g->DrawRect(0, y, scW, 1.0f, 0x22000000);
     }
 
-    // --- ヘッダー (グリッチ) ---
     bool isGlitch = (rand() % 100 < 2);
     float offX = isGlitch ? (rand() % 4 - 2.0f) : 0.0f;
-    uint32_t headCol = isGlitch ? 0xFFFFFFFF : 0xFF00FF00; // 緑
+    uint32_t headCol = isGlitch ? 0xFFFFFFFF : 0xFF00FF00;
 
     g->DrawString(L"MISSION SELECT", 100.0f + offX, 50.0f, 48.0f, headCol);
     g->DrawRect(0, 110, scW, 2.0f, 0xFF00FF00);
 
-    // --- ステージリスト (斜め配置 & スライド) ---
     int maxUnlock = Game::GetInstance()->GetMaxUnlockedStage();
 
     float startX = 100.0f;
@@ -139,21 +129,19 @@ void StageSelectScene::Draw() {
     float btnW = 600.0f;
     float btnH = 60.0f;
     float gapY = 80.0f;
-    float slantX = 30.0f; // 斜めのズレ幅
+    float slantX = 30.0f;
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 3; ++i) {
         bool isUnlocked = (i < maxUnlock);
         bool isSelected = (i == m_selectIndex);
 
-        float x = startX + (i * slantX); // 斜めに配置
+        float x = startX + (i * slantX);
         float y = startY + (i * gapY);
 
         if (isUnlocked && isSelected) {
-            // 選択中はスライド + 明滅
             x += 20.0f + sinf(ss_blinkTimer * 5.0f) * 5.0f;
         }
 
-        // 背景
         uint32_t bgCol = 0xAA222222;
         uint32_t lineCol = 0xFF444444;
         uint32_t textCol = 0xFF888888;
@@ -162,8 +150,8 @@ void StageSelectScene::Draw() {
 
         if (isUnlocked) {
             if (isSelected) {
-                bgCol = 0xCC004400;   // 選択中: 暗い緑
-                lineCol = 0xFF00FF00; // 線: 明るい緑
+                bgCol = 0xCC004400;
+                lineCol = 0xFF00FF00;
                 textCol = 0xFFFFFFFF;
             }
             else {
@@ -171,28 +159,27 @@ void StageSelectScene::Draw() {
                 lineCol = 0xFF006600;
                 textCol = 0xFFAAAAAA;
             }
-            if (i == 4) text += L" : FINAL OPERATION";
+            if (i == 2) text += L" : FINAL OPERATION";
             else text += L" : PATROL MISSION";
         }
         else {
             text += L" : [ LOCKED ]";
         }
 
-        // 描画
         g->FillRect(x, y, btnW, btnH, bgCol);
         g->DrawRectOutline(x, y, btnW, btnH, 2.0f, lineCol);
-        // 装飾バー
         if (isUnlocked) g->FillRect(x - 5.0f, y, 5.0f, btnH, lineCol);
 
         g->DrawString(text.c_str(), x + 30.0f, y + 10.0f, 32.0f, textCol);
     }
 
-    // 案内
     g->DrawString(L"[W/S]: Select   [ENTER]: Deploy", 150.0f, 650.0f, 24.0f, 0xFFFFFFFF);
 
     g->EndDraw2D();
 }
-
 void StageSelectScene::Shutdown() {
     pSkyBox.reset();
+    if (auto audio = Game::GetInstance()->GetAudio()) {
+        audio->Stop("BGM_SELECT");
+    }
 }

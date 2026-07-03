@@ -1,8 +1,3 @@
-/*===================================================================
-//ファイル:RenderSystem.cpp
-//概要:MeshComponentを持つエンティティを描画するシステム
-//修正: 定数バッファのセット漏れを修正し、描画ステートを完全にリセットする
-=====================================================================*/
 #include "ECS/Systems/RenderSystem.h"
 #include "App/Main.h"
 
@@ -13,8 +8,6 @@ void RenderSystem::Init(World* world) {
 
 	Graphics* graphics = Game::GetInstance()->GetGraphics();
 	ID3D11Device* device = graphics->GetDevice();
-
-
 	// シェーダー読み込み
 	if (!graphics->CreateVertexShader(L"Shaders/SimpleVS.hlsl", &pVS, &pInputLayout)) {
 		MessageBoxW(NULL, L"Vertex Shader Load Failed", L"Error", MB_OK);
@@ -29,19 +22,14 @@ void RenderSystem::Init(World* world) {
 
 	HRESULT hr;
 
-	// -----------------------------------------------------
-	// 1. ラスタライザーステート作成
-	// -----------------------------------------------------
-	// [A] 通常描画 (Solid)
 	D3D11_RASTERIZER_DESC solidDesc = {};
 	solidDesc.FillMode = D3D11_FILL_SOLID;
-	solidDesc.CullMode = D3D11_CULL_BACK;
+	solidDesc.CullMode = D3D11_CULL_NONE;
 	solidDesc.FrontCounterClockwise = TRUE;
 	solidDesc.DepthClipEnable = TRUE;
 	hr = device->CreateRasterizerState(&solidDesc, &pSolidState);
 	if (FAILED(hr)) MessageBoxW(NULL, L"Failed: SolidState", L"Error", MB_OK);
 
-	// [B] ワイヤーフレーム (Debug)
 	D3D11_RASTERIZER_DESC wfDesc = {};
 	wfDesc.FillMode = D3D11_FILL_WIREFRAME;
 	wfDesc.CullMode = D3D11_CULL_NONE;
@@ -52,9 +40,6 @@ void RenderSystem::Init(World* world) {
 	hr = device->CreateRasterizerState(&wfDesc, &pWireframeState);
 	if (FAILED(hr)) MessageBoxW(NULL, L"Failed: WireframeState", L"Error", MB_OK);
 
-	// -----------------------------------------------------
-	// 2. 深度ステンシルステート作成
-	// -----------------------------------------------------
 	D3D11_DEPTH_STENCIL_DESC dsDesc = {};
 	dsDesc.DepthEnable = TRUE;
 	dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
@@ -63,9 +48,6 @@ void RenderSystem::Init(World* world) {
 	hr = device->CreateDepthStencilState(&dsDesc, &pDepthState);
 	if (FAILED(hr)) MessageBoxW(NULL, L"Failed: DepthState", L"Error", MB_OK);
 
-	// -----------------------------------------------------
-	// 3. ブレンドステート作成
-	// -----------------------------------------------------
 	D3D11_BLEND_DESC blendDesc = {};
 	blendDesc.RenderTarget[0].BlendEnable = TRUE;
 	blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
@@ -78,7 +60,6 @@ void RenderSystem::Init(World* world) {
 	hr = device->CreateBlendState(&blendDesc, &pBlendState);
 	if (FAILED(hr)) MessageBoxW(NULL, L"Failed: BlendState", L"Error", MB_OK);
 
-	// デバッグ用メッシュの作成
 	MeshData boxData = GeometryGenerator::CreateMesh(ShapeType::CUBE, Colors::Red);
 	CreateDebugMesh(boxData, debugMeshBox);
 
@@ -86,16 +67,12 @@ void RenderSystem::Init(World* world) {
 	MeshData capData = GeometryGenerator::CreateMesh(ShapeType::CAPSULE, Colors::Red);
 	CreateDebugMesh(capData, debugMeshCapsule);
 
-	// ★追加: SPHERE (球)
 	MeshData sphereData = GeometryGenerator::CreateMesh(ShapeType::SPHERE, Colors::Red);
 	CreateDebugMesh(sphereData, debugMeshSphere);
 }
 
 void RenderSystem::Update(float dt) {
-	// Zキーが押された瞬間、表示フラグを反転させる
-	if (Game::GetInstance()->GetInput()->IsKeyDown('Z')) {
-		showColliders = !showColliders;
-	}
+	
 }
 
 void RenderSystem::Draw() {
@@ -103,7 +80,6 @@ void RenderSystem::Draw() {
 	ID3D11DeviceContext* context = graphics->GetContext();
 
 
-	// カメラ行列計算
 	XMMATRIX viewProj = XMMatrixIdentity();
 	auto registry = pWorld->GetRegistry();
 	for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
@@ -114,9 +90,6 @@ void RenderSystem::Draw() {
 		}
 	}
 
-	// =====================================================
-// ★重要: ステートの強制リセット
-// =====================================================
 	context->IASetInputLayout(pInputLayout.Get());
 	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->VSSetShader(pVS.Get(), nullptr, 0);
@@ -148,9 +121,6 @@ void RenderSystem::Draw() {
 	vp.TopLeftY = 0.0f;
 	context->RSSetViewports(1, &vp);
 
-	// =====================================================
-// 通常描画ループ
-// =====================================================
 	for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
 		if (!registry->HasComponent<TransformComponent>(id)) continue;
 		if (!registry->HasComponent<MeshComponent>(id)) continue;
@@ -174,9 +144,6 @@ void RenderSystem::Draw() {
 		context->DrawIndexed(mesh.indexCount, 0, 0);
 	}
 
-	// =====================================================
-// デバッグ描画
-// =====================================================
 	if (showColliders && pWireframeState) {
 		context->RSSetState(pWireframeState.Get());
 
@@ -195,7 +162,6 @@ void RenderSystem::Draw() {
 			XMMATRIX world = XMMatrixIdentity();
 			MeshComponent* pDebugMesh = nullptr;
 
-			// ★修正: コライダータイプごとのサイズ計算とメッシュ選択
 			if (col.type == ColliderType::Type_Box) {
 				world *= XMMatrixScaling(
 					col.size.x * trans.scale.x,
@@ -205,18 +171,14 @@ void RenderSystem::Draw() {
 				pDebugMesh = &debugMeshBox;
 			}
 			else if (col.type == ColliderType::Type_Sphere) {
-				// 1. 本来あるべき半径を計算
 				float trueRadius = col.radius * trans.scale.x;
 
-				// 2. メッシュ(半径0.5)に合わせて倍率を補正
 				float scaleFactor = trueRadius * 2.0f;
 
-				// 3. 適用
 				world *= XMMatrixScaling(scaleFactor, scaleFactor, scaleFactor);
 				pDebugMesh = &debugMeshSphere;
 			}
 			else if (col.type == ColliderType::Type_Capsule) {
-				// カプセルの場合
 				float sR = (col.radius * trans.scale.x) / 0.5f;
 				float sH = (col.height * trans.scale.y) / 2.0f;
 				world *= XMMatrixScaling(sR, sH, sR);

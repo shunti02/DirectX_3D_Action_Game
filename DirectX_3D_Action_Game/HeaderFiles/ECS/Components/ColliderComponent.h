@@ -1,31 +1,20 @@
-/*===================================================================
-//ファイル:ColliderComponent.h
-//概要:物理衝突判定用のデータを持つコンポーネント
-=====================================================================*/
 #pragma once
 #include <DirectXMath.h>
 
 enum class ColliderType {
     Type_None,
-    Type_Box,       // 立方体 (AABB)
-    Type_Capsule,   // カプセル
-    Type_Sphere     // 球
+    Type_Box,
+    Type_Capsule,
+    Type_Sphere
 };
 
 struct ColliderComponent {
     ColliderType type = ColliderType::Type_Box;
 
-    // 共通データ
-    DirectX::XMFLOAT3 center = { 0.0f, 0.0f, 0.0f }; // オフセット
-
-    // Box用データ
-    DirectX::XMFLOAT3 size = { 1.0f, 1.0f, 1.0f };   // 幅・高さ・奥行き
-
-    // Capsule/Sphere用データ
+    DirectX::XMFLOAT3 center = { 0.0f, 0.0f, 0.0f }; 
+    DirectX::XMFLOAT3 size = { 1.0f, 1.0f, 1.0f };
     float radius = 0.5f;
-    float height = 1.0f; // Capsuleのみ使用
-
-    // 初期化用ヘルパー関数はあってもOKです
+    float height = 1.0f; 
     void SetBox(float width, float h, float depth) {
         type = ColliderType::Type_Box;
         size = { width, h, depth };

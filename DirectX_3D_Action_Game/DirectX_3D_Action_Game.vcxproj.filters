@@ -55,6 +55,15 @@
     <Filter Include="SourceFiles\Scene">
       <UniqueIdentifier>{f849dafe-79b4-4dc6-be5a-eb55bfdb8da2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Assets">
+      <UniqueIdentifier>{efedabce-810f-47b8-b6fe-b292fc4aec67}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assets\Animations">
+      <UniqueIdentifier>{b678bd44-81e3-4a85-bcc2-009bae1e570f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="External">
+      <UniqueIdentifier>{a5ed0b6d-ee93-4c0f-b827-881082856bfa}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="SourceFiles\App\Main.cpp">
@@ -135,9 +144,6 @@
     <ClCompile Include="SourceFiles\Engine\SkyBox.cpp">
       <Filter>SourceFiles\Engine</Filter>
     </ClCompile>
-    <ClCompile Include="SourceFiles\Scene\CharacterSelectScene.cpp">
-      <Filter>SourceFiles\Scene</Filter>
-    </ClCompile>
     <ClCompile Include="SourceFiles\Scene\StageSelectScene.cpp">
       <Filter>SourceFiles\Scene</Filter>
     </ClCompile>
@@ -152,6 +158,12 @@
     </ClCompile>
     <ClCompile Include="SourceFiles\ECS\Systems\MovingSystem.cpp">
       <Filter>SourceFiles\ECS\Systems</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Scene\CustomizeScene.cpp">
+      <Filter>SourceFiles\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="SourceFiles\Engine\AnimationManager.cpp">
+      <Filter>SourceFiles\Engine</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -308,9 +320,6 @@
     <ClInclude Include="HeaderFiles\Engine\SkyBox.h">
       <Filter>HeaderFiles\Engine</Filter>
     </ClInclude>
-    <ClInclude Include="HeaderFiles\Scene\CharacterSelectScene.h">
-      <Filter>HeaderFiles\Scene</Filter>
-    </ClInclude>
     <ClInclude Include="HeaderFiles\Scene\StageSelectScene.h">
       <Filter>HeaderFiles\Scene</Filter>
     </ClInclude>
@@ -338,6 +347,15 @@
     <ClInclude Include="HeaderFiles\ECS\Systems\MovingSystem.h">
       <Filter>HeaderFiles\ECS\Systems</Filter>
     </ClInclude>
+    <ClInclude Include="HeaderFiles\Scene\CustomizeScene.h">
+      <Filter>HeaderFiles\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="HeaderFiles\Engine\AnimationManager.h">
+      <Filter>HeaderFiles\Engine</Filter>
+    </ClInclude>
+    <ClInclude Include="External\json.hpp">
+      <Filter>External</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="Shaders\SimplePS.hlsl">
@@ -349,6 +367,36 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Assets\Animations\AttackRight.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\AttackLeft.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\ShootRight.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\ShootLeft.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\Idle.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\Move.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\JumpUp.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\JumpDown.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\Hurt.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
+    <None Include="Assets\Animations\Dead.json">
+      <Filter>Assets\Animations</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\SkyVS.hlsl">

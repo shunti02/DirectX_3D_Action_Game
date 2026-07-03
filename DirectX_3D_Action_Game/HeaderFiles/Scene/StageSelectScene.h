@@ -14,5 +14,5 @@ public:
 
 private:
     std::unique_ptr<SkyBox> pSkyBox;
-    int m_selectIndex = 0; // 0~4 (Stage 1~5)
+    int m_selectIndex = 0;
 };

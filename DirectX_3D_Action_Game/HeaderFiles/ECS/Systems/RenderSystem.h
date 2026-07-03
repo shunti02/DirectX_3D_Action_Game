@@ -1,8 +1,3 @@
-/*===================================================================
-//ファイル:RenderSystem.h
-//概要:MeshComponentを持つエンティティを描画するシステム
-//修正: 定数バッファのセット漏れを修正し、描画ステートを完全にリセットする
-=====================================================================*/
 #pragma once
 #include "ECS/System.h"
 #include "ECS/World.h"
@@ -27,7 +22,6 @@ struct ConstantBufferData {
 
 class RenderSystem : public System {
 public:
-	// デバッグ表示のON/OFF切り替えフラグ
 	bool showColliders = false;
 
 

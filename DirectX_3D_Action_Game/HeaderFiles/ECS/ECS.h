@@ -1,12 +1,3 @@
-/*===================================================================
-//ファイル:ECS.h
-//制作日:2025/12/06
-//概要:Registry(EntityとComponentの紐づけ管理)
-//制作者:伊藤駿汰
-//-------------------------------------------------------------------
-//更新履歴:
-//2025/12/06:新規作成
-=====================================================================*/
 #pragma once
 #include "Component.h"
 #include <vector>
@@ -16,41 +7,31 @@
 #include <typeindex>
 #include <utility>
 
-/*----------------------------------------------
-//ComponentPool<T>:データ配列
------------------------------------------------*/
 template<typename T>
 class ComponentPool : public IComponentPool {
 public:
 	ComponentPool(size_t capacity = ECSConfig::MAX_ENTITIES) {
 		data.resize(capacity);
 	}
-	//データのリセット
 	void Set(EntityID entityID, T component) {
 		if (entityID >= data.size()) {
 			data.resize(ECSConfig::MAX_ENTITIES);
 		}
 		data[entityID] = component;
 	}
-	//データの取得
 	T& Get(EntityID entityID) {
 		return data[entityID];
 	}
-	//Entityの削除処理
 	void OnEntityDestroyed(EntityID entityID)override {
 
 	}
 private:
 	std::vector<T> data;
 };
-/*---------------------------------------------------------
-//Registry:Entity生成・破棄・コンポーネント紐づけの管理者
-----------------------------------------------------------*/
 class Registry {
 public:
 	Registry() {
 		entityComponentMasks.resize(ECSConfig::MAX_ENTITIES);
-		//IDプールの初期化
 		for (EntityID i = 0; i < ECSConfig::MAX_ENTITIES; ++i) {
 			freeEntities.push_back(i);
 		}
@@ -71,38 +52,26 @@ public:
 		freeEntities.push_back(entity);
 		activeEntityCount--;
 
-		//各プールに通知
 		for (auto& pair : componentPools) {
 			pair.second->OnEntityDestroyed(entity);
 		}
 	}
 
-	// -----------------------------------------------------------------
-	// ★修正箇所: コンポーネント追加
-	// -----------------------------------------------------------------
 	template <typename T, typename...Args>
 	void AddComponent(EntityID entity, Args&&...args) {
 		const auto componentID = ComponentType<T>::GetID();
 
-		//データを取得
 		auto pool = GetComponentPool<T>();
 
-		// ★ここを修正しました！
-		// 修正前: pool->Set(entity, T(std::forward<Args>(args)...)); // 丸括弧 () はコンストラクタ必須
-		// 修正後: pool->Set(entity, T{std::forward<Args>(args)...}); // 波括弧 {} なら構造体もOK
 		pool->Set(entity, T{ std::forward<Args>(args)... });
 
-		//マスクをオン
 		entityComponentMasks[entity].set(componentID);
 	}
-
-	//コンポーネント取得
 	template <typename T>
 	T& GetComponent(EntityID entity) {
 		auto pool = GetComponentPool<T>();
 		return pool->Get(entity);
 	}
-	//コンポーネントを持っているかどうか
 	template <typename T>
 	bool HasComponent(EntityID entity)const {
 		if (entity >= entityComponentMasks.size()) return false;
@@ -110,7 +79,6 @@ public:
 		return entityComponentMasks[entity].test(componentID);
 	}
 private:
-	//型ごとのプールを取得または作成
 	template <typename T>
 	std::shared_ptr<ComponentPool<T>>GetComponentPool() {
 		const char* typeName = typeid(T).name();
@@ -123,6 +91,6 @@ private:
 
 	std::uint32_t activeEntityCount = 0;
 	std::deque<EntityID> freeEntities;
-	std::vector<ComponentMask> entityComponentMasks;//誰が何を持っているか
+	std::vector<ComponentMask> entityComponentMasks;
 	std::unordered_map<const char*, std::shared_ptr<IComponentPool>> componentPools;
 };

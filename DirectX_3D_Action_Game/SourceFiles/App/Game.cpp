@@ -1,13 +1,10 @@
-/*===================================================================
-//ファイル:Game.cpp
-//概要:Gameクラスの実装
-=====================================================================*/
 #include "App/Game.h"
 #include "App/Main.h"
 #include "Scene/GameScene.h"
 #include "Scene/TitleScene.h"
 #include "../ImGui/imgui.h"
-#include <fstream> // ファイル読み書き用
+#include "Engine/AnimationManager.h"
+#include <fstream>
 #include <string>
 
 Game* Game::instance = nullptr;
@@ -46,9 +43,65 @@ bool Game::Initialize(HWND hWnd) {
         pAudio->LoadSound("SE_JUMP", L"Assets/Audio/jump.wav");
         pAudio->LoadSound("SE_SWITCH", L"Assets/Audio/switch.wav");
         pAudio->LoadSound("BGM_TITLE", L"Assets/Audio/title_bgm.wav");
+        pAudio->LoadSound("BGM_CUSTOMIZE", L"Assets/Audio/customize_bgm.wav");
+        pAudio->LoadSound("BGM_SELECT", L"Assets/Audio/select_bgm.wav");
+        pAudio->LoadSound("BGM_GAME", L"Assets/Audio/game_bgm.wav");
+        pAudio->LoadSound("BGM_RESULT", L"Assets/Audio/result_bgm.wav");
+    }
+    bool isAnimLoaded = AnimationManager::GetInstance()->LoadAnimation("AttackRight", "Assets/Animations/AttackRight.json");
+    if (isAnimLoaded) {
+        AppLog::AddLog("[Animation] AttackRight.json Loaded Successfully.");
+    }
+    else {
+        AppLog::AddLog("[ERROR] Failed to load AttackRight.json!");
+        MessageBoxA(m_hWnd,
+            "AttackRight.json の読み込みに失敗しました。\nファイルの配置場所、またはファイル名（拡張子）を確認してください。",
+            "ファイル読み込みエラー",
+            MB_OK | MB_ICONERROR);
     }
 
-    // 最初のシーンへ遷移 (GameScene)
+    bool isAnimLoadedLeft = AnimationManager::GetInstance()->LoadAnimation("AttackLeft", "Assets/Animations/AttackLeft.json");
+    if (isAnimLoadedLeft) {
+        AppLog::AddLog("[Animation] AttackLeft.json Loaded Successfully.");
+    }
+    else {
+        AppLog::AddLog("[ERROR] Failed to load AttackLeft.json!");
+        MessageBoxA(m_hWnd, "AttackLeft.json の読み込みに失敗しました。", "ファイル読み込みエラー", MB_OK | MB_ICONERROR);
+    }
+
+    bool isShootRightLoaded = AnimationManager::GetInstance()->LoadAnimation("ShootRight", "Assets/Animations/ShootRight.json");
+    if (!isShootRightLoaded) {
+        AppLog::AddLog("[ERROR] Failed to load ShootRight.json!");
+        MessageBoxA(m_hWnd, "ShootRight.json の読み込みに失敗しました。", "エラー", MB_OK | MB_ICONERROR);
+    }
+
+    bool isShootLeftLoaded = AnimationManager::GetInstance()->LoadAnimation("ShootLeft", "Assets/Animations/ShootLeft.json");
+    if (!isShootLeftLoaded) {
+        AppLog::AddLog("[ERROR] Failed to load ShootLeft.json!");
+        MessageBoxA(m_hWnd, "ShootLeft.json の読み込みに失敗しました。", "エラー", MB_OK | MB_ICONERROR);
+    }
+
+    bool isIdleLoaded = AnimationManager::GetInstance()->LoadAnimation("Idle", "Assets/Animations/Idle.json");
+    if (!isIdleLoaded) { AppLog::AddLog("[ERROR] Failed to load Idle.json!"); MessageBoxA(m_hWnd, "Idle.json の読み込みに失敗しました。", "エラー", MB_OK | MB_ICONERROR); }
+
+    bool isMoveLoaded = AnimationManager::GetInstance()->LoadAnimation("Move", "Assets/Animations/Move.json");
+    if (!isMoveLoaded) { AppLog::AddLog("[ERROR] Failed to load Move.json!"); MessageBoxA(m_hWnd, "Move.json の読み込みに失敗しました。", "エラー", MB_OK | MB_ICONERROR); }
+
+    bool isJU = AnimationManager::GetInstance()->LoadAnimation("JumpUp", "Assets/Animations/JumpUp.json");
+    if (!isJU) { MessageBoxA(m_hWnd, "JumpUp.json の読み込みに失敗しました。", "エラー", MB_OK); }
+
+    bool isJD = AnimationManager::GetInstance()->LoadAnimation("JumpDown", "Assets/Animations/JumpDown.json");
+    if (!isJD) { MessageBoxA(m_hWnd, "JumpDown.json の読み込みに失敗しました。", "エラー", MB_OK); }
+
+    bool isHurt = AnimationManager::GetInstance()->LoadAnimation("Hurt", "Assets/Animations/Hurt.json");
+    if (!isHurt) { MessageBoxA(m_hWnd, "Hurt.json の読み込みに失敗しました。", "エラー", MB_OK); }
+
+    bool isDeadLoaded = AnimationManager::GetInstance()->LoadAnimation("Dead", "Assets/Animations/Dead.json");
+    if (!isDeadLoaded) {
+        AppLog::AddLog("[ERROR] Failed to load Dead.json!");
+        MessageBoxA(m_hWnd, "Dead.json の読み込みに失敗しました。", "エラー", MB_OK | MB_ICONERROR);
+    }
+    //シーン初期化
     pSceneManager->ChangeScene<TitleScene>();
 
     return true;
@@ -81,18 +134,6 @@ void Game::Draw() {
     if (pSceneManager) {
         pSceneManager->Draw();
     }
-#ifdef _DEBUG
-    //デバッグUIのテスト表示
-    ImGui::Begin("Debug Menu");//ウィンドウ表示
-
-    ImGui::Text("Hello, ImGui!");//テキスト表示
-    ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate); // FPS表示
-    // 背景色を変えるテスト
-    static float color[4] = { 0.1f,0.1f,0.1f,1.0f };
-    ImGui::ColorEdit3("BG Color", color);//カラーパレット表示
-    //ウィンドウ終了
-    ImGui::End();
-#endif
     //UI描画終了
     pGraphics->EndUI();
 
@@ -106,59 +147,51 @@ void Game::Shutdown() {
     pGraphics.reset();
 }
 
-// ★追加: セーブ機能
+//セーブ
 void Game::SaveGame() {
     std::ofstream file("savedata.txt");
     if (file.is_open()) {
-        // 解放済みステージ数と、現在選択中のプレイヤータイプを保存
-        // (スペース区切りで書き込む)
-        file << m_maxUnlockedStage << " " << (int)m_selectedPlayerType;
+        file << m_maxUnlockedStage << "\n"
+            << m_customizeData.headID << "\n"
+            << m_customizeData.bodyID << "\n"
+            << m_customizeData.armLeftID << "\n"
+            << m_customizeData.armRightID << "\n"
+            << m_customizeData.legID << "\n";
 
         file.close();
-        AppLog::AddLog("[System] Game Saved. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
+        AppLog::AddLog("[System] Game Saved.");
     }
 }
 
-// ★追加: ロード機能
+//ロード
 bool Game::LoadGame() {
     std::ifstream file("savedata.txt");
     if (file.is_open()) {
-        int loadedType = 0;
+        file >> m_maxUnlockedStage
+            >> m_customizeData.headID
+            >> m_customizeData.bodyID
+            >> m_customizeData.armLeftID
+            >> m_customizeData.armRightID
+            >> m_customizeData.legID;
 
-        // 解放済みステージ数とプレイヤータイプを読み込む
-        file >> m_maxUnlockedStage >> loadedType;
-
-        // 安全対策: 範囲チェック
         if (m_maxUnlockedStage < 1) m_maxUnlockedStage = 1;
-        if (m_maxUnlockedStage > 5) m_maxUnlockedStage = 5;
-
-        // プレイヤータイプの反映
-        // (Enumの範囲内かチェック)
-        if (loadedType >= (int)PlayerType::AssaultStriker && loadedType <= (int)PlayerType::PlasmaSniper) {
-            m_selectedPlayerType = (PlayerType)loadedType;
-        }
-        else {
-            m_selectedPlayerType = PlayerType::AssaultStriker; // デフォルト
-        }
+        if (m_maxUnlockedStage > 3) m_maxUnlockedStage = 3;
 
         file.close();
-        AppLog::AddLog("[System] Game Loaded. MaxStage:%d, Type:%d", m_maxUnlockedStage, (int)m_selectedPlayerType);
-        return true; // ロード成功
+        AppLog::AddLog("[System] Game Loaded.");
+        return true;
     }
-    return false; // ファイルがない（初回プレイなど）
+    return false;
 }
 
-// ★追加: リセット機能 (NEW GAME)
+//リセット
 void Game::ResetGame() {
     m_maxUnlockedStage = 1;
     m_currentStage = 1;
     m_currentPhase = 1;
     m_savedPlayerHP = -1;
 
-    // NEW GAME時はプレイヤータイプはデフォルトに戻さない方が親切な場合もありますが、
-    // ここでは完全に初期化するならデフォルトに戻します。
-    // (もしキャラ選択画面から始まるなら、そこで上書きされるので気にしなくてOK)
     m_selectedPlayerType = PlayerType::AssaultStriker;
 
-    SaveGame(); // リセットした状態を保存
+    SaveGame();
 }

@@ -1,0 +1,87 @@
+{
+  "name": "JumpUp",
+  "duration": 1.0,
+  "tracks": [
+    {
+      "part": "Waist",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.1, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Body",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -0.1, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "LegRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.5, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "LegLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.5, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -2.0, 0.0, 0.1 ]
+        }
+      ]
+    },
+    {
+      "part": "ShoulderLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -2.0, 0.0, -0.1 ]
+        }
+      ]
+    },
+    {
+      "part": "ArmRight",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -1.0, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "ArmLeft",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ -1.0, 0.0, 0.0 ]
+        }
+      ]
+    },
+    {
+      "part": "Head",
+      "keyframes": [
+        {
+          "time": 0.0,
+          "rot": [ 0.0, 0.0, 0.0 ]
+        }
+      ]
+    }
+  ]
+}

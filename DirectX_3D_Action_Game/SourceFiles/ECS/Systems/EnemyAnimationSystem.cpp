@@ -1,151 +1,244 @@
+#define NOMINMAX
 #include "ECS/Systems/EnemyAnimationSystem.h"
 #include "ECS/World.h"
-#include "ECS/Components/EnemyPartComponent.h" // エネミー用パーツ
+#include "ECS/Components/EnemyPartComponent.h"
 #include "ECS/Components/TransformComponent.h"
 #include "ECS/Components/EnemyComponent.h"
 #include "ECS/Components/StatusComponent.h"
+#include "ECS/Components/PhysicsComponent.h"
+#include "Engine/AnimationManager.h"
+#include "App/Game.h"
 #include <cmath>
 #include <algorithm>
+#include <unordered_map>
+#include <functional>
 
 using namespace DirectX;
 
-// ピボット回転計算 (共通ヘルパー)
-static XMVECTOR RotateAroundPivot(XMVECTOR point, XMVECTOR pivot, XMVECTOR rot) {
-    XMVECTOR dir = point - pivot;
-    XMMATRIX M = XMMatrixRotationRollPitchYawFromVector(rot);
-    dir = XMVector3TransformCoord(dir, M);
-    return pivot + dir;
+static float Lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+static XMFLOAT3 ExtractEulerAngles(const XMMATRIX& mat) {
+    XMFLOAT4X4 m; XMStoreFloat4x4(&m, mat);
+    float pitch = asinf(-std::clamp(m._32, -1.0f, 1.0f));
+    float yaw = 0.0f, roll = 0.0f;
+    if (cosf(pitch) > 0.0001f) { yaw = atan2f(m._31, m._33); roll = atan2f(m._12, m._22); }
+    else { yaw = atan2f(-m._13, m._11); roll = 0.0f; }
+    return { pitch, yaw, roll };
 }
+
+struct EnemyAnimState {
+    XMVECTOR waistOffset = XMVectorZero();
+    XMVECTOR waistRot = XMVectorZero();
+    XMVECTOR bodyRot = XMVectorZero();
+    XMVECTOR headRot = XMVectorZero();
+    XMVECTOR rightShoulderRot = XMVectorZero();
+    XMVECTOR rightArmRot = XMVectorZero();
+    XMVECTOR leftShoulderRot = XMVectorZero();
+    XMVECTOR leftArmRot = XMVectorZero();
+    XMVECTOR rightLegRot = XMVectorZero();
+    XMVECTOR leftLegRot = XMVectorZero();
+};
 
 void EnemyAnimationSystem::Update(float dt) {
     timeAccumulator += dt;
     auto registry = pWorld->GetRegistry();
 
-    // 全エンティティから「エネミーのパーツ」を持っているものを探す
-    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
-        if (!registry->HasComponent<EnemyPartComponent>(id)) continue;
+    std::unordered_map<EntityID, EnemyAnimState> animStates;
+    std::unordered_map<EntityID, EntityID> partToCoreMap;
 
-        auto& part = registry->GetComponent<EnemyPartComponent>(id);
+    for (EntityID coreID = 0; coreID < ECSConfig::MAX_ENTITIES; ++coreID) {
+        if (!registry->HasComponent<EnemyComponent>(coreID) || !registry->HasComponent<TransformComponent>(coreID)) continue;
 
-        // 親（本体）が存在するか確認
-        if (!registry->HasComponent<TransformComponent>(part.parentID)) continue;
+        auto& enemy = registry->GetComponent<EnemyComponent>(coreID);
+        EnemyAnimState state;
 
-        auto& parentTrans = registry->GetComponent<TransformComponent>(part.parentID);
-        // エネミー情報の取得（死んでいるかなどのチェック用）
         bool isDead = false;
-        if (registry->HasComponent<StatusComponent>(part.parentID)) {
-            if (registry->GetComponent<StatusComponent>(part.parentID).hp <= 0) isDead = true;
+        bool isHurt = false;
+        if (registry->HasComponent<StatusComponent>(coreID)) {
+            auto& status = registry->GetComponent<StatusComponent>(coreID);
+            isDead = status.hp <= 0;
+            isHurt = !isDead && (enemy.knockbackTimer > 0.0f);
         }
 
-        // --- アニメーションパラメータ ---
-        XMVECTOR bodyOffset = XMVectorZero();
-        XMVECTOR bodyRot = XMVectorZero();
-        XMVECTOR localRot = XMVectorZero();
-
-        // 1. 共通: 呼吸モーション (上下にふわふわ)
-        if (!isDead) {
-            float floatY = sinf(timeAccumulator * 3.0f + part.parentID) * 0.05f; // IDで位相をずらす
-            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, floatY, 0, 0));
+        float speedSq = 0.0f;
+        if (registry->HasComponent<PhysicsComponent>(coreID)) {
+            auto& phy = registry->GetComponent<PhysicsComponent>(coreID);
+            speedSq = phy.velocity.x * phy.velocity.x + phy.velocity.z * phy.velocity.z;
         }
+        bool isMoving = !isDead && !isHurt && (speedSq > 0.1f);
+        bool isAttacking = !isDead && !isHurt && (enemy.state == EnemyState::Attack || enemy.state == EnemyState::Cooldown);
 
-        // 2. 部位ごとの固有モーション (拡張版)
-        if (part.partType == EnemyPartType::ArmLeft || part.partType == EnemyPartType::ArmRight) {
-            // 腕をゆらゆらさせる
-            float sway = sinf(timeAccumulator * 5.0f + part.parentID) * 0.1f;
-            localRot = XMVectorSet(sway, 0, 0, 0);
-        }
-        else if (part.partType == EnemyPartType::LegLeft || part.partType == EnemyPartType::LegRight) {
-            // 足を前後に（簡易歩行）
-            float walk = sinf(timeAccumulator * 8.0f) * 0.2f;
-            // 左右で逆位相
-            if (part.partType == EnemyPartType::LegRight) walk *= -1.0f;
-            localRot = XMVectorSet(walk, 0, 0, 0);
-        }
-        else if (part.partType == EnemyPartType::Wing) {
-            // 羽をパタパタ（ボスの翼はゆっくり）
-            float speed = (part.parentID % 2 == 0) ? 2.0f : 10.0f; // ボスかどうか簡易判定（本来はComponentで見るべきだが）
-            float flap = sinf(timeAccumulator * speed) * 0.15f;
-            localRot = XMVectorSet(flap, 0, 0, 0);
-        }
-        else if (part.partType == EnemyPartType::Ring) {
-            float speed = 1.0f;         // 基本速度
-            float t = timeAccumulator;
-
-            int variant = id % 3; // 0, 1, 2
-
-            if (variant == 0) {
-                // Ring 1 (大): Y軸回転 (水平スピン)
-                // 90度傾けないので、そのままY軸で回せば水平回転になります
-                localRot = XMVectorSet(0, t * speed * 0.5f, 0, 0);
+        float attackT = 0.0f;
+        if (isAttacking) {
+            if (enemy.attackDuration > 0.0f) {
+                attackT = std::clamp(enemy.attackTimer / enemy.attackDuration, 0.0f, 1.0f);
             }
-            else if (variant == 1) {
-                // Ring 2 (中): X軸回転 (縦回転)
-                // X軸で回すと、前転/後転のような動きになります
-                localRot = XMVectorSet(t * speed * 0.8f, 0, 0, 0);
+            if (enemy.state == EnemyState::Cooldown) attackT = 0.0f;
+        }
+
+        float t = timeAccumulator;
+
+        // ---------------------------------------------------------
+        // 【待機・移動 (ベースアニメーション)】
+        // ---------------------------------------------------------
+        if (!isDead) {
+            std::string animName = isMoving ? "Move" : "Idle";
+            float duration = AnimationManager::GetInstance()->GetDuration(animName);
+            float currentTime = fmodf(t, duration);
+
+            state.rightShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderRight, currentTime);
+            state.leftShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderLeft, currentTime);
+            state.rightArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmRight, currentTime);
+            state.leftArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmLeft, currentTime);
+            state.rightLegRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::LegRight, currentTime);
+            state.leftLegRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::LegLeft, currentTime);
+            state.waistRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Waist, currentTime);
+            state.bodyRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Body, currentTime);
+            state.headRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Head, currentTime);
+
+            if (isMoving && enemy.type == EnemyType::Normal) {
+                float dashPitch = 0.35f;
+                state.waistRot = XMVectorAdd(state.waistRot, XMVectorSet(dashPitch, 0, 0, 0));
+                state.bodyRot = XMVectorAdd(state.bodyRot, XMVectorSet(dashPitch * 0.2f, 0, 0, 0));
+                state.headRot = XMVectorAdd(state.headRot, XMVectorSet(-dashPitch * 1.2f, 0, 0, 0));
+            }
+            state.waistOffset = XMVectorSet(0, sinf(t * (isMoving ? 10.0f : 1.5f)) * 0.05f, 0, 0);
+        }
+
+        // ---------------------------------------------------------
+        // 【攻撃 (ブレンド対応)】
+        // ---------------------------------------------------------
+        if (isAttacking) {
+            std::string animName = (enemy.type == EnemyType::Ranged || enemy.type == EnemyType::Heavy) ? "ShootRight" : "AttackRight";
+            float duration = AnimationManager::GetInstance()->GetDuration(animName);
+            float currentTime = (1.0f - attackT) * duration;
+
+            if (enemy.type == EnemyType::Normal) {
+                // 近接ロボ: 全身上書き
+                state.rightShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderRight, currentTime);
+                state.leftShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderLeft, currentTime);
+                state.rightArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmRight, currentTime);
+                state.leftArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmLeft, currentTime);
+                state.waistRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Waist, currentTime);
+                state.bodyRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Body, currentTime);
+                state.headRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Head, currentTime);
+
+                float stanceT = std::clamp((1.0f - attackT) * 2.0f, 0.0f, 1.0f);
+                state.rightLegRot = XMVectorSet(0.1f + stanceT * 0.3f, 0, 0, 0);
+                state.leftLegRot = XMVectorSet(0.1f - stanceT * 0.7f, 0, 0, 0);
             }
             else {
-                // Ring 3 (小): Z軸回転 (側転)
-                // Z軸で回すと、正面から見て時計回りに回ります
-                localRot = XMVectorSet(0, 0, t * speed * 1.2f, 0);
+                // 遠距離ロボ: 上半身のみJSONで上書きし、下半身(カニ歩き移動)を残す
+                state.rightShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderRight, currentTime);
+                state.leftShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderLeft, currentTime);
+                state.rightArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmRight, currentTime);
+                state.leftArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmLeft, currentTime);
+                state.bodyRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Body, currentTime);
+                state.headRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Head, currentTime);
             }
         }
-        else if (part.partType == EnemyPartType::Shield) {
-            // ビット（シールド）を周囲に公転させる
-            // ※BaseOffset自体を書き換えるのは少し複雑なので、ここでは自転のみ
-            float spin = timeAccumulator * 3.0f;
-            localRot = XMVectorSet(0, spin, 0, 0);
-        }
-        else if (part.partType == EnemyPartType::Thruster) {
-            // スラスターの振動
-            float vib = sinf(timeAccumulator * 30.0f) * 0.05f;
-            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, 0, vib, 0));
+
+        // 【被弾】
+        if (isHurt && !isDead) {
+            std::string animName = "Hurt";
+            state.waistRot = XMVectorAdd(state.waistRot, AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Waist, 0));
+            state.bodyRot = XMVectorAdd(state.bodyRot, AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Body, 0));
+            state.headRot = XMVectorAdd(state.headRot, AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Head, 0));
+            state.rightShoulderRot = XMVectorAdd(state.rightShoulderRot, AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderRight, 0));
+            state.leftShoulderRot = XMVectorAdd(state.leftShoulderRot, AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderLeft, 0));
+            state.waistOffset = XMVectorAdd(state.waistOffset, XMVectorSet(0, sinf(t * 25.0f) * 0.05f, 0, 0));
         }
 
-        // 3. 死亡時の崩壊エフェクト (バラバラになる)
+        // 【死亡】
         if (isDead) {
-            // 爆発するように広がる（簡易）
-            // ※本来はPhysicsで飛ばすのが良いですが、ここでは見た目だけ
-            float explode = 0.1f;
-            // パーツごとの固有ベクトルへ飛ばす（簡易的にオフセット方向へ）
-            XMVECTOR dir = XMLoadFloat3(&part.baseOffset);
-            dir = XMVector3Normalize(dir);
-            bodyOffset = XMVectorAdd(bodyOffset, dir * explode);
-            // 落下
-            bodyOffset = XMVectorAdd(bodyOffset, XMVectorSet(0, -0.5f, 0, 0));
+            std::string animName = "Dead";
+            state.waistRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Waist, 0);
+            state.bodyRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Body, 0);
+            state.headRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::Head, 0);
+            state.rightShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderRight, 0);
+            state.leftShoulderRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ShoulderLeft, 0);
+            state.rightArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmRight, 0);
+            state.leftArmRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::ArmLeft, 0);
+            state.rightLegRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::LegRight, 0);
+            state.leftLegRot = AnimationManager::GetInstance()->EvaluateTrack(animName, PartType::LegLeft, 0);
+            state.waistOffset = XMVectorSet(0, -1.2f, 0, 0);
+        }
+        animStates[coreID] = state;
+    }
+
+    // 2. FK計算とTransformへの適用
+    std::unordered_map<EntityID, XMMATRIX> worldMatrixCache;
+    std::function<EntityID(EntityID)> FindRootCore = [&](EntityID id) -> EntityID {
+        if (partToCoreMap.count(id)) return partToCoreMap[id];
+        if (!registry->HasComponent<EnemyPartComponent>(id)) return id;
+        EntityID parent = (EntityID)registry->GetComponent<EnemyPartComponent>(id).parentID;
+        EntityID root = FindRootCore(parent);
+        partToCoreMap[id] = root;
+        return root;
+        };
+
+    std::function<XMMATRIX(EntityID)> GetWorldMatrix = [&](EntityID id) -> XMMATRIX {
+        if (worldMatrixCache.count(id)) return worldMatrixCache[id];
+        if (!registry->HasComponent<TransformComponent>(id)) return XMMatrixIdentity();
+
+        auto& trans = registry->GetComponent<TransformComponent>(id);
+        XMMATRIX localMat = XMMatrixIdentity();
+
+        if (registry->HasComponent<EnemyPartComponent>(id)) {
+            auto& part = registry->GetComponent<EnemyPartComponent>(id);
+            EntityID coreID = FindRootCore(id);
+
+            XMVECTOR animRot = XMVectorZero();
+            XMVECTOR animOffset = XMVectorZero();
+
+            if (part.partModelID == -1 && animStates.count(coreID)) {
+                EnemyAnimState& state = animStates[coreID];
+                switch (part.partType) {
+                case PartType::Waist:         animRot = state.waistRot; animOffset = state.waistOffset; break;
+                case PartType::Body:          animRot = state.bodyRot; break;
+                case PartType::Head:          animRot = state.headRot; break;
+                case PartType::ShoulderRight: animRot = state.rightShoulderRot; break;
+                case PartType::ArmRight:      animRot = state.rightArmRot; break;
+                case PartType::ShoulderLeft:  animRot = state.leftShoulderRot; break;
+                case PartType::ArmLeft:       animRot = state.leftArmRot; break;
+                case PartType::LegRight:      animRot = state.rightLegRot; break;
+                case PartType::LegLeft:       animRot = state.leftLegRot; break;
+                default: break;
+                }
+            }
+
+            XMMATRIX localS = XMMatrixScaling(trans.scale.x, trans.scale.y, trans.scale.z);
+            XMMATRIX localR = XMMatrixRotationRollPitchYawFromVector(XMLoadFloat3(&part.baseRotation) + animRot);
+            XMMATRIX localT = XMMatrixTranslationFromVector(XMLoadFloat3(&part.baseOffset) + animOffset);
+            localMat = localS * localR * localT;
+
+            if (part.parentID != -1 && part.parentID != id) {
+                XMMATRIX parentMat = GetWorldMatrix((EntityID)part.parentID);
+                localMat = localMat * parentMat;
+            }
+        }
+        else {
+            localMat = XMMatrixScaling(trans.scale.x, trans.scale.y, trans.scale.z) *
+                XMMatrixRotationRollPitchYaw(trans.rotation.x, trans.rotation.y, trans.rotation.z) *
+                XMMatrixTranslation(trans.position.x, trans.position.y, trans.position.z);
         }
 
-        // =========================================================
-        // 最終適用 (親の行列に合わせて追従)
-        // =========================================================
+        worldMatrixCache[id] = localMat;
+        return localMat;
+        };
 
-        // 1. 基準位置
-        XMVECTOR currentPos = XMLoadFloat3(&part.baseOffset);
-        XMVECTOR currentRot = XMVectorZero();
+    for (EntityID id = 0; id < ECSConfig::MAX_ENTITIES; ++id) {
+        if (!registry->HasComponent<EnemyPartComponent>(id)) continue;
+        if (!registry->HasComponent<TransformComponent>(id)) continue;
 
-        // 2. ローカル回転・移動適用
-        currentRot = XMVectorAdd(currentRot, localRot);
-        currentPos = XMVectorAdd(currentPos, bodyOffset);
+        XMMATRIX finalWorldMat = GetWorldMatrix(id);
+        auto& partTrans = registry->GetComponent<TransformComponent>(id);
 
-        // 3. 親のワールド変換 (回転 -> 平行移動)
-        // エネミーのY軸回転
-        XMMATRIX parentRotMat = XMMatrixRotationY(parentTrans.rotation.y);
+        XMVECTOR scale, rotQuat, trans;
+        XMMatrixDecompose(&scale, &rotQuat, &trans, finalWorldMat);
+        XMStoreFloat3(&partTrans.position, trans);
 
-        // 位置を回す
-        XMVECTOR finalPosVec = XMVector3TransformCoord(currentPos, parentRotMat);
-        // 親の位置を足す
-        finalPosVec = XMVectorAdd(finalPosVec, XMLoadFloat3(&parentTrans.position));
-
-        // 回転の合成
-        float finalRotX = part.baseRotation.x + XMVectorGetX(currentRot);
-        float finalRotY = parentTrans.rotation.y + part.baseRotation.y + XMVectorGetY(currentRot);
-        float finalRotZ = part.baseRotation.z + XMVectorGetZ(currentRot);
-
-        // 4. TransformComponentに書き込み
-        if (registry->HasComponent<TransformComponent>(id)) {
-            auto& partTrans = registry->GetComponent<TransformComponent>(id);
-            XMStoreFloat3(&partTrans.position, finalPosVec);
-            partTrans.rotation = { finalRotX, finalRotY, finalRotZ };
-            // スケールは生成時のまま維持
-        }
+        XMMATRIX pureRotMat = XMMatrixRotationQuaternion(rotQuat);
+        partTrans.rotation = ExtractEulerAngles(pureRotMat);
     }
 }
